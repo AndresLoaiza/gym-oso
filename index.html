@@ -8,7 +8,7 @@
 <meta name="apple-mobile-web-app-title" content="Oso Gym">
 <meta name="theme-color" content="#0a0a0a">
 <link rel="manifest" href="manifest.json">
-<link rel="apple-touch-icon" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'><rect width='180' height='180' fill='%230a0a0a'/><text x='90' y='118' font-family='Arial Black' font-size='80' fill='%23e8ff47' text-anchor='middle' font-weight='900'>OSO</text></svg>">
+<link rel="apple-touch-icon" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'><rect width='180' height='180' fill='%230a0a0a'/><text x='90' y='118' font-family='Arial Black' font-size='80' fill='%23c4a7ff' text-anchor='middle' font-weight='900'>OSO</text></svg>">
 <title>El Oso Gym</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap');
@@ -18,7 +18,7 @@
     --surface: #141414;
     --surface2: #1e1e1e;
     --border: #2a2a2a;
-    --accent: #e8ff47;
+    --accent: #c4a7ff;
     --accent2: #ff6b35;
     --warn: #ffb84d;
     --text: #f0f0f0;
@@ -215,10 +215,10 @@
 
   <!-- INICIO -->
   <section class="screen active" id="screen-home">
-    <div class="card">
+    <div class="card" style="position:sticky; top:64px; z-index:50; box-shadow:0 4px 12px rgba(0,0,0,0.4);">
       <h3>Hoy</h3>
       <div id="home-today"></div>
-      <button class="btn primary" id="go-rutina" style="margin-top:10px">Empezar sesión</button>
+      <button class="btn primary" id="go-rutina" style="margin-top:10px; font-size:16px; padding:14px;">▶ Empezar sesión</button>
     </div>
     <div class="stats-grid" id="home-stats"></div>
     <div class="card">
@@ -686,12 +686,13 @@ $$('.nav-btn').forEach(b => b.addEventListener('click', () => show(b.dataset.tab
 /* ============= HOME ============= */
 function renderHome(){
   const t = $('#home-today');
-  const td = todaysSession();
-  if(td){
-    t.innerHTML = `<div class="muscle">${td.focus}</div>
+  const ns = nextSession();
+  if(ns){
+    const td = ns.session;
+    t.innerHTML = `<div class="muscle">Semana ${ns.weekIdx+1} · Día ${ns.dayIdx+1} · ${td.focus}</div>
       <div style="font-size:13px; margin-top:6px;">${td.exercises.length} ejercicios · ${td.notes || ''}</div>`;
   } else {
-    t.innerHTML = `<div class="small">Hoy es día de descanso. Aprovecha para estirar o caminar 30 min suave.</div>`;
+    t.innerHTML = `<div class="small">Plan de 8 semanas completado 🎉. Regenera desde Plan.</div>`;
   }
   const stats = $('#home-stats');
   const totalSesiones = DB.sessions.length;
@@ -721,32 +722,45 @@ function uniqueWeeks(){
   }));
   return ws.size;
 }
-function todaysSession(){
+function nextSession(){
   if(!DB.plan) return null;
-  const dayIdx = new Date().getDay(); // 0=Dom
-  // Lun=1, Mié=3, Vie=5 → mapeo a A,B,C
-  const map = {1:0, 3:1, 5:2};
-  if(!(dayIdx in map)) return null;
-  const weekN = Math.floor(daysBetween(DB.plan.start, todayISO()) / 7);
-  if(weekN < 0 || weekN > 7) return null;
-  return DB.plan.weeks[weekN]?.[map[dayIdx]] || null;
+  const done = new Set((DB.sessions || []).filter(s => s.planRef).map(s => `${s.planRef.w}-${s.planRef.d}`));
+  for(let w = 0; w < DB.plan.weeks.length; w++){
+    for(let d = 0; d < DB.plan.weeks[w].length; d++){
+      if(!done.has(`${w}-${d}`)) return { weekIdx: w, dayIdx: d, session: DB.plan.weeks[w][d] };
+    }
+  }
+  return null;
 }
+function todaysSession(){ return nextSession()?.session || null; }
 $('#go-rutina').addEventListener('click', () => show('rutina'));
 
 /* ============= PLAN ============= */
 function renderPlan(){
   if(!DB.plan){ $('#plan-summary').innerHTML = '<div class="small">No hay plan. Completa onboarding.</div>'; return; }
-  const weekN = Math.max(0, Math.min(7, Math.floor(daysBetween(DB.plan.start, todayISO())/7)));
-  $('#plan-summary').innerHTML = `<h3>Semana ${weekN+1} / 8</h3>
-    <div class="small">Plan ${DB.plan.generatedBy === 'ai' ? '🤖 IA' : '⚙️ Predeterminado'} · Inicio ${fmtDate(DB.plan.start)}</div>
-    <div class="small" style="margin-top:6px;">Al terminar las 8 semanas, plan se mantiene en modo mantenimiento. Puedes regenerar.</div>`;
+  const ns = nextSession();
+  const weekN = ns ? ns.weekIdx : DB.plan.weeks.length - 1;
+  const sessionsDone = (DB.sessions || []).filter(s => s.planRef).length;
+  const total = DB.plan.weeks.reduce((a,wk) => a + wk.length, 0);
+  const summary = ns
+    ? `<h3>Próximo: Sem ${ns.weekIdx+1} · Día ${ns.dayIdx+1}</h3>
+       <div class="small">Plan ${DB.plan.generatedBy === 'ai' ? '🤖 IA' : '⚙️ Predeterminado'} · ${sessionsDone}/${total} sesiones hechas</div>
+       <div class="small" style="margin-top:6px;">Cada día avanza al finalizar la sesión actual. Independiente del calendario.</div>`
+    : `<h3>🎉 Plan completado</h3><div class="small">${sessionsDone}/${total} sesiones. Regenera para empezar otro ciclo.</div>`;
+  $('#plan-summary').innerHTML = summary;
+
+  const doneByWeek = {};
+  (DB.sessions || []).filter(s => s.planRef).forEach(s => {
+    doneByWeek[s.planRef.w] = (doneByWeek[s.planRef.w] || 0) + 1;
+  });
 
   const strip = $('#week-strip');
   strip.innerHTML = '';
   DB.plan.weeks.forEach((wk, i) => {
     const d = document.createElement('div');
-    d.className = 'day' + (i === weekN ? ' today' : '');
-    d.innerHTML = `<div class="d">S${i+1}</div><div class="focus">${wk[0].focus.split(' ')[0]}</div>`;
+    const allDone = (doneByWeek[i] || 0) >= wk.length;
+    d.className = 'day' + (i === weekN ? ' today' : '') + (allDone ? ' done' : '');
+    d.innerHTML = `<div class="d">S${i+1}</div><div class="focus">${doneByWeek[i] || 0}/${wk.length}</div>`;
     d.addEventListener('click', () => showWeek(i));
     strip.appendChild(d);
   });
@@ -754,9 +768,10 @@ function renderPlan(){
 }
 function showWeek(i){
   const wk = DB.plan.weeks[i];
+  const done = new Set((DB.sessions || []).filter(s => s.planRef && s.planRef.w === i).map(s => s.planRef.d));
   const html = wk.map((day, di) => `
-    <div class="card">
-      <h3>Día ${di+1} · ${day.focus}</h3>
+    <div class="card" ${done.has(di) ? 'style="opacity:0.6;border-color:var(--success);"' : ''}>
+      <h3>Día ${di+1} · ${day.focus} ${done.has(di) ? '✓' : ''}</h3>
       <div class="small">${day.notes || ''}</div>
       <hr>
       ${day.exercises.map(e => `<div class="row-with-thumb" style="font-size:13px; padding:6px 0; border-bottom:1px dashed var(--border);">
@@ -773,13 +788,16 @@ $('#regen-plan').addEventListener('click', regenerateWithAI);
 
 /* ============= RUTINA HOY ============= */
 function renderRutina(){
-  const td = todaysSession();
-  if(!td){
-    $('#rutina-list').innerHTML = '<div class="card"><div class="small">Hoy es descanso. Estira o camina suave. O elige otro día desde Plan.</div></div>';
-    $('#rutina-title').textContent = 'Descanso';
+  const ns = nextSession();
+  if(!ns){
+    $('#rutina-list').innerHTML = '<div class="card"><div class="small">🎉 Plan completado. Regenera desde Plan para empezar nuevo ciclo.</div></div>';
+    $('#rutina-title').textContent = 'Completado';
     return;
   }
-  $('#rutina-title').textContent = td.focus;
+  const td = ns.session;
+  DB._currentRef = { w: ns.weekIdx, d: ns.dayIdx };
+  saveDB();
+  $('#rutina-title').textContent = `S${ns.weekIdx+1}·D${ns.dayIdx+1} — ${td.focus}`;
 
   // Init sessionSets si vacío
   if(Object.keys(DB.sessionSets).length === 0){
@@ -875,12 +893,13 @@ $('#finish-session').addEventListener('click', () => {
   if(exercises.length === 0) return;
   const hasDone = exercises.some(e => e.sets.some(s => s.done));
   if(!hasDone) { if(!confirm('No marcaste series completadas. ¿Finalizar igual?')) return; }
-  DB.sessions.push({ date: new Date().toISOString(), exercises });
+  DB.sessions.push({ date: new Date().toISOString(), exercises, planRef: DB._currentRef || null });
   DB.sessionSets = {};
+  DB._currentRef = null;
   saveDB();
   releaseWake();
   alert('Sesión guardada ✓');
-  show('hist');
+  show('home');
 });
 
 /* ============= TIMER ============= */
@@ -985,7 +1004,7 @@ function drawChart(id){
     data: {
       labels: pts.map(p => fmtDate(p.date)),
       datasets: [
-        { label: 'Peso máx (kg)', data: pts.map(p => p.top), borderColor: '#e8ff47', backgroundColor: 'rgba(232,255,71,0.2)', tension: 0.3, yAxisID: 'y' },
+        { label: 'Peso máx (kg)', data: pts.map(p => p.top), borderColor: '#c4a7ff', backgroundColor: 'rgba(196,167,255,0.2)', tension: 0.3, yAxisID: 'y' },
         { label: 'Reps prom', data: pts.map(p => p.reps), borderColor: '#ff6b35', backgroundColor: 'rgba(255,107,53,0.2)', tension: 0.3, yAxisID: 'y1' }
       ]
     },
@@ -994,7 +1013,7 @@ function drawChart(id){
       plugins: { legend: { labels: { color: '#f0f0f0', font: { size: 10 } } } },
       scales: {
         x: { ticks: { color: '#888', font: { size: 10 } }, grid: { color: '#222' } },
-        y: { position: 'left', ticks: { color: '#e8ff47', font: { size: 10 } }, grid: { color: '#222' } },
+        y: { position: 'left', ticks: { color: '#c4a7ff', font: { size: 10 } }, grid: { color: '#222' } },
         y1: { position: 'right', ticks: { color: '#ff6b35', font: { size: 10 } }, grid: { display: false } }
       }
     }
