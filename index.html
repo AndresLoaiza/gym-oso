@@ -58,8 +58,13 @@
   .nav-btn .ico { font-size: 16px; display: block; margin-bottom: 2px; }
 
   /* SCREEN */
-  .screen { display: none; padding: 16px; padding-bottom: calc(80px + var(--safe-bot)); }
+  .screen { display: none; padding: 16px; padding-bottom: calc(110px + var(--safe-bot)); }
   .screen.active { display: block; }
+
+  /* ACTION BAR (fijo abajo) */
+  .action-bar { position: fixed; left: 0; right: 0; bottom: 0; background: linear-gradient(to top, var(--bg) 70%, transparent); padding: 14px 16px calc(14px + var(--safe-bot)); z-index: 90; max-width: 480px; margin: 0 auto; pointer-events: none; }
+  .action-bar > * { pointer-events: auto; }
+  .action-bar .btn { font-size: 15px; padding: 14px; }
   .section-title { font-family: 'Bebas Neue', sans-serif; font-size: 24px; letter-spacing: 1px; margin: 12px 0 10px; }
   .small { font-size: 12px; color: var(--muted); }
 
@@ -96,7 +101,7 @@
   .progress-bar .fill { height: 100%; background: var(--accent); transition: width 0.3s; }
 
   /* TIMER */
-  .timer-wrap { position: fixed; bottom: calc(20px + var(--safe-bot)); left: 50%; transform: translateX(-50%); background: var(--accent2); color: #fff; padding: 10px 18px; border-radius: 30px; font-family: 'DM Mono', monospace; font-weight: 700; font-size: 14px; display: none; z-index: 1000; box-shadow: 0 4px 12px rgba(0,0,0,0.5); }
+  .timer-wrap { position: fixed; bottom: calc(90px + var(--safe-bot)); left: 50%; transform: translateX(-50%); background: var(--accent2); color: #fff; padding: 10px 18px; border-radius: 30px; font-family: 'DM Mono', monospace; font-weight: 700; font-size: 14px; display: none; z-index: 1000; box-shadow: 0 4px 12px rgba(0,0,0,0.5); }
   .timer-wrap.active { display: flex; align-items: center; gap: 10px; }
   .timer-wrap .stop { background: rgba(0,0,0,0.3); border: 0; color: #fff; border-radius: 50%; width: 28px; height: 28px; font-size: 14px; }
 
@@ -165,7 +170,7 @@
   hr { border: 0; border-top: 1px solid var(--border); margin: 12px 0; }
 
   /* Onboarding */
-  .onboard { padding: 24px 20px; min-height: 100vh; display: flex; flex-direction: column; }
+  .onboard { padding: 24px 20px calc(110px + var(--safe-bot)); min-height: 100dvh; display: flex; flex-direction: column; }
   .onboard h1 { font-family: 'Bebas Neue', sans-serif; font-size: 40px; letter-spacing: 2px; color: var(--accent); line-height: 1; margin-bottom: 6px; }
   .onboard h2 { font-family: 'Bebas Neue', sans-serif; font-size: 24px; letter-spacing: 1px; margin: 16px 0 8px; }
   .onboard p { font-size: 14px; color: var(--muted); margin-bottom: 16px; line-height: 1.5; }
@@ -189,11 +194,11 @@
     <div class="dot" data-dot="3"></div>
   </div>
   <div id="ob-step"></div>
-  <div style="margin-top:auto; padding-top:20px;">
-    <div class="btn-row">
-      <button class="btn ghost" id="ob-back" style="display:none">Atrás</button>
-      <button class="btn primary" id="ob-next">Siguiente</button>
-    </div>
+</div>
+<div class="action-bar" id="ob-actions" style="display:none">
+  <div class="btn-row">
+    <button class="btn ghost" id="ob-back" style="display:none">Atrás</button>
+    <button class="btn primary" id="ob-next">Siguiente</button>
   </div>
 </div>
 
@@ -215,10 +220,9 @@
 
   <!-- INICIO -->
   <section class="screen active" id="screen-home">
-    <div class="card" style="position:sticky; top:64px; z-index:50; box-shadow:0 4px 12px rgba(0,0,0,0.4);">
+    <div class="card">
       <h3>Hoy</h3>
       <div id="home-today"></div>
-      <button class="btn primary" id="go-rutina" style="margin-top:10px; font-size:16px; padding:14px;">▶ Empezar sesión</button>
     </div>
     <div class="stats-grid" id="home-stats"></div>
     <div class="card">
@@ -246,7 +250,6 @@
     <div class="card" id="plan-summary"></div>
     <div class="week-strip" id="week-strip"></div>
     <div id="plan-detail"></div>
-    <button class="btn warn" id="regen-plan" style="margin-top:10px">Regenerar plan con IA</button>
   </section>
 
   <!-- RUTINA HOY -->
@@ -255,10 +258,7 @@
     <div class="progress-bar"><div class="fill" id="rutina-fill" style="width:0"></div></div>
     <div class="small" id="rutina-progress-text">0 / 0 series</div>
     <div id="rutina-list" style="margin-top:12px"></div>
-    <div class="btn-row" style="margin-top:14px">
-      <button class="btn" id="add-exercise">+ Añadir ejercicio</button>
-      <button class="btn primary" id="finish-session">Finalizar</button>
-    </div>
+    <button class="btn ghost" id="add-exercise" style="margin-top:14px">+ Añadir ejercicio</button>
   </section>
 
   <!-- CATÁLOGO -->
@@ -309,6 +309,17 @@
       <button class="btn danger" id="reset-onb">Volver a hacer onboarding</button>
     </div>
   </section>
+</div>
+
+<!-- Action bars por pantalla -->
+<div class="action-bar" id="bar-home" style="display:none">
+  <button class="btn primary" id="go-rutina">▶ Empezar siguiente sesión</button>
+</div>
+<div class="action-bar" id="bar-rutina" style="display:none">
+  <button class="btn primary" id="finish-session">✓ Finalizar sesión</button>
+</div>
+<div class="action-bar" id="bar-plan" style="display:none">
+  <button class="btn warn" id="regen-plan">🤖 Regenerar plan con IA</button>
 </div>
 
 <!-- Image lightbox -->
@@ -435,6 +446,7 @@ const OB_STEPS_COUNT = 4;
 function showOnboarding(){
   $('#onboarding').style.display = 'flex';
   $('#app').style.display = 'none';
+  $('#ob-actions').style.display = '';
   renderOnbStep();
 }
 function renderOnbStep(){
@@ -674,6 +686,11 @@ DEVUELVE SOLO JSON VÁLIDO sin backticks ni texto. Estructura exacta:
 function show(tab){
   $$('.nav-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
   $$('.screen').forEach(s => s.classList.toggle('active', s.id === 'screen-'+tab));
+  // Action bars
+  ['home','rutina','plan'].forEach(t => {
+    const bar = $('#bar-'+t);
+    if(bar) bar.style.display = (t === tab) ? '' : 'none';
+  });
   if(tab === 'home') renderHome();
   if(tab === 'plan') renderPlan();
   if(tab === 'rutina') renderRutina();
@@ -1068,7 +1085,7 @@ function releaseWake(){ try { wakeLock?.release(); wakeLock = null; } catch(e){}
 document.addEventListener('visibilitychange', () => { if(document.visibilityState === 'visible' && DB.settings?.wake) requestWake(); });
 
 /* ============= BOOT ============= */
-function showApp(){ $('#onboarding').style.display='none'; $('#app').style.display=''; show('home'); }
+function showApp(){ $('#onboarding').style.display='none'; $('#ob-actions').style.display='none'; $('#app').style.display=''; show('home'); }
 
 if(!DB.profile){ showOnboarding(); }
 else { showApp(); }
