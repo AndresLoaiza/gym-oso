@@ -90,11 +90,13 @@
   label.field .lbl { display: block; font-size: 11px; color: var(--muted); margin-bottom: 4px; font-family: 'DM Mono', monospace; letter-spacing: 1px; text-transform: uppercase; }
 
   /* SET ROW */
-  .set-row { display: grid; grid-template-columns: 28px 1fr 1fr auto; gap: 6px; align-items: center; padding: 6px 0; }
+  .set-row { display: grid; grid-template-columns: 24px 1fr 1fr 38px 32px; gap: 4px; align-items: center; padding: 6px 0; }
   .set-row .n { font-family: 'DM Mono', monospace; font-size: 12px; color: var(--muted); text-align: center; }
   .set-row input { padding: 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text); font-size: 13px; text-align: center; }
   .set-row .check { width: 38px; height: 38px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface2); color: var(--muted); font-size: 16px; }
   .set-row .check.done { background: var(--success); color: #000; border-color: var(--success); }
+  .set-row .del { width: 32px; height: 38px; border-radius: 8px; border: 1px solid var(--border); background: transparent; color: var(--danger); font-size: 14px; opacity: 0.6; }
+  .set-row .del:active { opacity: 1; background: rgba(248,113,113,0.15); }
 
   /* PROGRESS */
   .progress-bar { height: 8px; background: var(--surface2); border-radius: 8px; overflow: hidden; margin: 8px 0; }
@@ -304,6 +306,16 @@
         <input type="checkbox" id="cfg-wake" style="width:20px; height:20px;">
         <span style="font-size:13px;">Mantener pantalla encendida durante sesión</span>
       </label>
+    </div>
+    <div class="card">
+      <h3>Backup / Restore</h3>
+      <div class="small">Exporta toda tu data (perfil, plan, historial) a un archivo JSON. Guárdalo en iCloud Drive / Google Drive. Si borras la app o cambias de celular, impórtalo y vuelves justo donde estabas.</div>
+      <div class="btn-row" style="margin-top:10px">
+        <button class="btn primary" id="export-json">⬇ Exportar JSON</button>
+        <button class="btn" id="import-json">⬆ Importar JSON</button>
+      </div>
+      <input type="file" id="import-file" accept="application/json,.json" style="display:none">
+      <div class="small" style="margin-top:8px;color:var(--muted);">Última exportación: <span id="last-export">nunca</span></div>
     </div>
     <div class="card">
       <h3>Reiniciar onboarding</h3>
@@ -872,8 +884,9 @@ function renderSets(i){
     row.innerHTML = `<div class="n">${j+1}</div>
       <input type="${ex.isCardio?'text':'number'}" inputmode="${ex.isCardio?'text':'decimal'}" value="${s.reps}" placeholder="reps">
       <input type="number" inputmode="decimal" value="${s.weight}" placeholder="kg" ${ex.isCardio?'disabled':''}>
-      <button class="check ${s.done?'done':''}">${s.done?'✓':'○'}</button>`;
-    const [, repsI, wI, btn] = row.children;
+      <button class="check ${s.done?'done':''}">${s.done?'✓':'○'}</button>
+      <button class="del" title="Borrar serie">🗑</button>`;
+    const [, repsI, wI, btn, delBtn] = row.children;
     repsI.addEventListener('change', e => { s.reps = ex.isCardio ? e.target.value : (+e.target.value || 0); saveDB(); });
     wI.addEventListener('change', e => { s.weight = +e.target.value || 0; saveDB(); });
     btn.addEventListener('click', () => {
@@ -882,6 +895,10 @@ function renderSets(i){
       btn.textContent = s.done ? '✓' : '○';
       if(s.done && !ex.isCardio) { startTimer(90); if(navigator.vibrate) navigator.vibrate(50); }
       saveDB(); updateProgress();
+    });
+    delBtn.addEventListener('click', () => {
+      if(ex.sets.length <= 1){ alert('No puedes borrar la única serie. Borra el ejercicio completo si lo necesitas.'); return; }
+      ex.sets.splice(j, 1); saveDB(); renderSets(i); updateProgress();
     });
     wrap.appendChild(row);
   });
@@ -1058,6 +1075,8 @@ function renderConfig(){
     Rodilla: ${p.knee || '—'}<br>
     Baseline Prensa 45°: ${p.baseline?.w}kg × ${p.baseline?.r}reps → 1RM est. <b style="color:var(--accent)">${p.baseline?.legPress1RM}kg</b>
   </div>`;
+  const le = $('#last-export');
+  if(le) le.textContent = DB.lastExport ? new Date(DB.lastExport).toLocaleString('es') : 'nunca';
 }
 $('#save-key').addEventListener('click', () => {
   DB.apiKey = $('#cfg-key').value.trim();
@@ -1074,6 +1093,36 @@ $('#edit-profile').addEventListener('click', () => {
 });
 const editProfileBtnLabel = document.querySelector('#edit-profile');
 if(editProfileBtnLabel) editProfileBtnLabel.textContent = 'Editar perfil';
+$('#export-json').addEventListener('click', () => {
+  const blob = new Blob([JSON.stringify(DB, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const ts = new Date().toISOString().slice(0,16).replace(/[:T]/g,'-');
+  a.href = url; a.download = `elosogym-backup-${ts}.json`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  DB.lastExport = new Date().toISOString();
+  saveDB();
+  renderConfig();
+});
+$('#import-json').addEventListener('click', () => $('#import-file').click());
+$('#import-file').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if(!file) return;
+  try {
+    const text = await file.text();
+    const data = JSON.parse(text);
+    if(!data.profile && !data.sessions) throw new Error('Archivo no parece backup válido.');
+    if(!confirm(`¿Reemplazar TODA tu data actual con este backup?\n\nPerfil: ${data.profile ? 'sí' : 'no'}\nSesiones: ${(data.sessions||[]).length}\nPlan: ${data.plan ? 'sí' : 'no'}`)) return;
+    DB = Object.assign({}, DEFAULT_DB, data);
+    saveDB();
+    alert('Importado ✓');
+    location.reload();
+  } catch(err){
+    alert('Error: ' + err.message);
+  }
+});
+
 $('#reset-onb').addEventListener('click', () => {
   if(!confirm('¿Reiniciar onboarding? Tu historial se conserva.')) return;
   obStep = 0; showOnboarding();
