@@ -259,6 +259,7 @@
     <div class="small" id="rutina-progress-text">0 / 0 series</div>
     <div id="rutina-list" style="margin-top:12px"></div>
     <button class="btn ghost" id="add-exercise" style="margin-top:14px">+ Añadir ejercicio</button>
+    <button class="btn ghost danger" id="reset-session" style="margin-top:8px; color:var(--danger); border-color:var(--danger);">↺ Reiniciar esta sesión</button>
   </section>
 
   <!-- CATÁLOGO -->
@@ -812,20 +813,21 @@ function renderRutina(){
     return;
   }
   const td = ns.session;
-  DB._currentRef = { w: ns.weekIdx, d: ns.dayIdx };
-  saveDB();
-  $('#rutina-title').textContent = `S${ns.weekIdx+1}·D${ns.dayIdx+1} — ${td.focus}`;
+  const newRef = { w: ns.weekIdx, d: ns.dayIdx };
+  const refChanged = !DB._currentRef || DB._currentRef.w !== newRef.w || DB._currentRef.d !== newRef.d;
+  DB._currentRef = newRef;
 
-  // Init sessionSets si vacío
-  if(Object.keys(DB.sessionSets).length === 0){
+  // Re-init si vacío o si cambió de día (sessionSets viejos quedaron)
+  if(refChanged || Object.keys(DB.sessionSets).length === 0){
     DB.sessionSets = {};
     td.exercises.forEach((ex, idx) => {
       DB.sessionSets[idx] = { id: ex.id, name: ex.name, isCardio: ex.isCardio || false,
         sets: Array.from({length: ex.sets}, () => ({ reps: ex.reps, weight: ex.weight || 0, done: false })),
         note: ex.note || '' };
     });
-    saveDB();
   }
+  saveDB();
+  $('#rutina-title').textContent = `S${ns.weekIdx+1}·D${ns.dayIdx+1} — ${td.focus}`;
 
   const list = $('#rutina-list');
   list.innerHTML = '';
@@ -892,6 +894,11 @@ function updateProgress(){
   $('#rutina-progress-text').textContent = `${done} / ${total} series`;
 }
 
+$('#reset-session').addEventListener('click', () => {
+  if(!confirm('¿Descartar progreso actual y re-cargar ejercicios del plan?')) return;
+  DB.sessionSets = {}; DB._currentRef = null; saveDB();
+  renderRutina();
+});
 $('#add-exercise').addEventListener('click', () => {
   // Modal con catálogo para agregar
   const items = CATALOGO.filter(c => !c.isCardio).map(c => `<button class="btn" style="text-align:left;margin-bottom:6px;display:flex;gap:10px;align-items:center;" data-id="${c.id}">${thumb(c.id,'sm')}<span style="flex:1">${c.name}<br><span class="small">${c.muscle}</span></span></button>`).join('');
