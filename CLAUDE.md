@@ -2,9 +2,11 @@
 
 ## Contexto del proyecto
 
-App web móvil de entrenamiento para **Andrés “El Oso” Loaiza**, ingeniero de datos y comediante de stand-up en Medellín. El objetivo principal es preparación física para **trekkings de montaña nivel 4** en 1-2 meses.
+App web móvil PWA de entrenamiento para **Andrés "El Oso" Loaiza** (Medellín). Objetivo: preparación física para **trekking nivel 4** con plan adaptado a **Síndrome de Dolor Patelofemoral (PFPS)**. Sin fecha fija para el trek — preparación continua.
 
-El archivo principal es `index.html` — toda la app vive en un solo archivo HTML/CSS/JS.
+**Repo:** https://github.com/AndresLoaiza/gym-oso
+**URL pública:** https://andresloaiza.github.io/gym-oso/
+**Archivo principal:** `index.html` — toda la app en un solo archivo HTML/CSS/JS, sin frameworks.
 
 -----
 
@@ -12,21 +14,33 @@ El archivo principal es `index.html` — toda la app vive en un solo archivo HTM
 
 - **Nivel:** Principiante en gimnasio
 - **Frecuencia:** 2-3 días por semana
-- **Limitación física:** Molestia en rodilla → priorizar cuádriceps
-- **Objetivo:** Resistencia cardiovascular y fuerza funcional para trekking nivel 4
-- **Dispositivo principal:** Celular (la app debe funcionar perfectamente en móvil)
+- **Condición clínica:** Síndrome de Dolor Patelofemoral (PFPS). Reglas duras del plan:
+  - Sin flexión de rodilla bajo carga >30° (en sentadilla/prensa: no pasar 90° en la articulación)
+  - Priorizar Vasto Medial Oblicuo (VMO) → abducción cadera, sentadilla con rotación externa
+  - Leg Extension solo arco corto (últimos 30°), carga baja
+  - Cardio bajo impacto: StairMaster progresivo, caminata inclinada 10-12%, bici
+  - Evitar: trotar, box jumps, plyometría, lunges profundos
+- **Gimnasio:** Gatehouse Gym & Wellness (Medellín) — 25 máquinas catalogadas
+- **Dispositivo principal:** iPhone 15 Pro Max (PWA instalable)
 - **Idioma:** Todo en español
 
 -----
 
 ## Stack
 
-- **Un solo archivo:** `index.html` con HTML + CSS + JS inline
-- **Sin frameworks ni bundlers** — debe correr directo en el navegador sin build steps
-- **Fuentes:** Google Fonts (Bebas Neue, DM Sans, DM Mono)
-- **IA:** Anthropic API (`claude-sonnet-4-20250514`) llamada desde el frontend
-- **Persistencia:** `localStorage` con clave `elosoGym`
-- **Deploy:** GitHub Pages → la URL pública es lo que el usuario abre en el celular
+- `index.html` (~1300 líneas HTML + CSS + JS inline, sin frameworks ni bundlers)
+- `manifest.json` + `sw.js` → PWA instalable + offline cache
+- `catalogo-imgs.js` → 25 thumbnails base64 (229 KB)
+- `Chart.js@4.4.1` vía CDN para gráficas
+- Anthropic API (`claude-sonnet-4-20250514`) opcional — solo para regenerar plan con IA. API key se guarda en localStorage del navegador.
+- Persistencia: `localStorage` clave **`elosoGymV2`**
+- Fuentes: Google Fonts (Bebas Neue, DM Sans, DM Mono)
+- Theme: dark + acento lila violeta `#c4a7ff`, acento2 naranja `#ff6b35`
+
+## Scripts auxiliares
+
+- `convert.py` — convierte HEIC → JPG (requiere `pillow-heif`, `Pillow`)
+- `gen_thumbs.py` — genera `catalogo-imgs.js` (thumbnails 220px JPEG q70 base64)
 
 -----
 
@@ -34,148 +48,115 @@ El archivo principal es `index.html` — toda la app vive en un solo archivo HTM
 
 ```json
 {
+  "profile": { "weight":75, "height":175, "age":32, "knee":"bien",
+               "baseline":{ "legPress1RM":42, "w":30, "r":12, "date":"..." } },
+  "apiKey": "sk-ant-…",
+  "plan": { "start":"YYYY-MM-DD", "weeks":[[{focus,notes,exercises:[...]}, ...]], "generatedBy":"local|ai" },
   "sessions": [
-    {
-      "date": "ISO string",
-      "exercises": [
-        {
-          "id": "leg_press",
-          "name": "Leg Press",
-          "muscle": "Cuádriceps · Glúteos",
-          "sets": [{ "reps": 15, "weight": 30, "done": true }],
-          "setsTarget": 3,
-          "weight": 30,
-          "isCardio": false
-        }
-      ]
-    }
+    { "date":"ISO", "exercises":[...], "planRef":{w:0,d:0}, "kneeStatus":"bien|leve|dolor" }
   ],
-  "currentRoutine": [],
-  "sessionSets": {}
+  "sessionSets": { "0": {id, name, isCardio, note, sets:[{reps,weight,done}]} },
+  "settings": { "wake": false },
+  "lastExport": "ISO",
+  "_currentRef": {w,d},
+  "_kneeStatus": "bien|leve|dolor",
+  "_adaptedSession": {...}
 }
 ```
 
 -----
 
-## Funcionalidades implementadas
+## Pantallas
 
-### 📷 Pestaña Escanear
+### Onboarding (4 pasos)
+1. Bienvenida + qué hace la app
+2. Perfil (peso, estatura, edad)
+3. Condición PFPS (estado rodilla hoy)
+4. Test baseline en Prensa 45° (Hammer) — calcula 1RM con fórmula Epley
 
-- Usuario toma foto de una máquina
-- Se envía a Claude Vision (Anthropic API) con prompt especializado
-- Claude devuelve JSON con: nombre, músculos, series, reps, peso inicial, tip técnico, beneficio para trekking, regla de progresión
-- Se compara con historial: si completó todas las series la última vez → sugiere subir 2.5kg
-- Botón para agregar la máquina a la rutina del día
+### 🏠 Inicio
+- Card "Hoy" con próxima sesión del plan (Sem X · Día Y · Focus)
+- Stats: sesiones, series, semanas activas
+- Guía de carga PFPS (RIR, ROM, reglas)
+- **Glosario clickeable** con definiciones (RIR, ROM, PFPS, VMO, 1RM, Epley, etc.)
+- Action bar fija inferior: "▶ Empezar siguiente sesión"
 
-### 💪 Pestaña Rutina
+### 📅 Plan
+- Plan periodizado de 8 semanas:
+  - Sem 1-2 adaptación → 3-5 fuerza → 6-7 resistencia trekking → 8 taper (-volumen)
+  - 3 días/semana (A=pierna, B=tren superior, C=trekking-cardio)
+- Strip semanas con contador `N/3` por semana, ✓ si completa
+- Día completado se muestra con opacidad reducida
+- Action bar: "🤖 Regenerar plan con IA"
 
-- Lista de máquinas del día con acordeón expandible
-- Por cada máquina: inputs de kg y reps por serie, botón para marcar serie como completada
-- Botón “Agregar serie” por máquina
-- Barra de progreso global (series completadas / total)
-- Timer de descanso con vibración al terminar (1, 1:30, 2, 3 min)
-- Rutina predeterminada para trekking (7 ejercicios)
-- Botón “Finalizar sesión” → guarda en historial y limpia sessionSets
+### 💪 Hoy (rutina)
+- **Check-in rodilla pre-sesión** (modal, 3 opciones):
+  - 😊 Bien → sesión normal
+  - 😐 Molestia leve → cargas -20%, label "(-20% por molestia)"
+  - 😣 Dolor >3/10 → quita Hack/Prensa/Leg Ext/Jack Squat, cargas restantes -40%, agrega isométricos + abductor VMO + StairMaster suave
+- Series con kg/reps editables + check + 🗑 borrar individual
+- Timer descanso 1:30 / 3:00 con vibración
+- "+ Añadir ejercicio" desde catálogo
+- "↺ Reiniciar esta sesión" (descarta progreso, re-pregunta rodilla)
+- Action bar: "✓ Finalizar sesión"
 
-### 📊 Pestaña Historial
+### 📷 Catálogo
+- 25 máquinas con thumbnail base64
+- Tags PFPS: `safe` verde, `caution` amarillo, `avoid` rojo
+- Tap thumbnail → lightbox tamaño completo
+- Búsqueda por nombre/músculo
+- (Sin scanner cámara — feature removida por decisión del usuario)
 
-- Stats: sesiones totales, series totales
-- Lista de sesiones con fecha, ejercicios, peso máximo y reps promedio
-- Borrar historial completo con confirmación
+### 📊 Historial
+- Stats totales
+- Gráfica Chart.js (selector ejercicio → peso máx + reps prom en línea de tiempo)
+- Lista sesiones con detalle expandible
+- Borrar sesión individual / historial completo
 
------
-
-## Rutina predeterminada (RUTINA_TREKKING)
-
-|Ejercicio              |Series|Reps|Peso inicial|Prioridad       |
-|-----------------------|------|----|------------|----------------|
-|Leg Press              |3     |15  |30kg        |🔴 Alta (rodilla)|
-|Extensión de Cuádriceps|3     |12  |15kg        |🔴 Alta (rodilla)|
-|Curl Femoral           |3     |12  |15kg        |🟡 Media         |
-|Abductor de Cadera     |3     |15  |20kg        |🟡 Media         |
-|Remo en Polea Baja     |3     |12  |20kg        |🟡 Media         |
-|Press de Hombros       |3     |12  |10kg        |🟢 Baja          |
-|Elíptica/Bicicleta     |—     |—   |cardio      |🟡 Media         |
-
------
-
-## Reglas de progresión de peso
-
-- Si completó **todas las series** en la última sesión → sugerir `+2.5kg`
-- Si no completó todas → mantener el mismo peso
-- El peso sugerido aparece pre-cargado en los inputs de la rutina
-- La función clave es `getBestForMachine(machineId)` → busca la sesión más reciente con ese ejercicio
-
------
-
-## Prompt del sistema para reconocimiento de máquinas
-
-El prompt está en la función `analyzeMachine()`. Contexto clave que debe mantener:
-
-- Usuario principiante
-- Molestia en rodilla → fortalecer cuádriceps
-- Objetivo: trekking nivel 4 en 1-2 meses
-- Responde **solo JSON válido**, sin backticks ni texto adicional
-- Pesos en kg para principiante
+### ⚙️ Config
+- API key Anthropic (input password)
+- Perfil editable + baseline visible
+- Wake lock toggle (pantalla no se apaga durante sesión)
+- **Backup / Restore JSON** — exportar todo a archivo, importar desde archivo (sobrevive borrado de app, cambio de celular)
+- Reiniciar onboarding
 
 -----
 
-## Diseño y UX
+## Reglas de progresión
 
-- **Tema:** Dark, industrial, bold
-- **Colores:** fondo `#0a0a0a`, acento `#e8ff47` (amarillo neón), acento2 `#ff6b35` (naranja)
-- **Tipografía:** Bebas Neue (títulos/números), DM Sans (cuerpo), DM Mono (datos/labels)
-- **Mobile-first:** max-width 430px, sin zoom, tap targets grandes
-- **Nav fija** en la parte superior con 3 pestañas
-
------
+- Si completa todas las series con RIR 2+ → próxima sesión `+2.5kg`
+- Si no completa → mantiene peso
+- `nextSession()` retorna primer día no completado del plan (independiente del calendario — secuencial)
+- `adaptSessionForKnee(td, status)` ajusta carga y ejercicios según check-in pre-sesión
 
 ## Convenciones de código
 
 - Todo en español (UI, comentarios, variables descriptivas)
-- Funciones nombradas en camelCase descriptivo: `renderRutina`, `finalizarSesion`, `getBestForMachine`
-- `saveDB()` se llama después de cada mutación del estado
-- `DB` es el objeto global de estado, sincronizado con localStorage
-- No usar `alert()` para cosas importantes → usar modales ya implementados
-
------
-
-## Próximas mejoras sugeridas
-
-- [ ] Sincronización en la nube (Supabase o Firebase) para no depender de localStorage
-- [ ] Gráfico de progreso de peso por ejercicio en el historial
-- [ ] Modo “sesión activa” que evita que la pantalla se apague
-- [ ] Notificación push cuando termina el descanso (requiere service worker)
-- [ ] Exportar historial como CSV
-- [ ] Selector de días de entrenamiento con plan semanal
-- [ ] Peso corporal y métricas de condición física
-
------
+- Funciones camelCase: `renderRutina`, `nextSession`, `adaptSessionForKnee`, `epley1RM`
+- `saveDB()` después de cada mutación
+- `DB` objeto global, sincronizado con localStorage
+- IDs catálogo en snake_case (`leg_press_45`, `prone_leg_curl`, `pantorrilla_sentado`)
+- No usar `alert()` para flows importantes → usar `openModal()` ya implementado
 
 ## Deploy
 
-- **Repo:** `gym-oso` en GitHub
-- **Branch principal:** `main`
-- **Deploy:** GitHub Pages desde `main` / `root`
-- **URL:** `https://[usuario].github.io/gym-oso`
-- El celular apunta a esa URL guardada como acceso directo en la pantalla de inicio
-
------
-
-## Cómo trabajar en este proyecto
-
 ```bash
-# Clonar
-git clone https://github.com/[usuario]/gym-oso.git
-cd gym-oso
+# Local
+python -m http.server 8080
+# Abrir http://localhost:8080 (SW requiere localhost o HTTPS)
 
-# Editar — todo está en index.html
-# Previsualizar localmente con Live Server (VS Code) o:
-python3 -m http.server 8080
-
-# Subir cambios
-git add index.html
-git commit -m "descripción del cambio"
-git push origin main
-# GitHub Pages se actualiza en ~1 minuto
+# Commit + push
+git add -A
+git commit -m "descripción"
+git push  # GitHub Pages se actualiza ~1-2 min
 ```
+
+Al modificar `index.html`, **bump versión cache** en `sw.js` (`const CACHE = 'oso-gym-vN'`) para invalidar service worker.
+
+## Próximas mejoras posibles
+
+- [ ] Sincronización iCloud / Supabase (multi-dispositivo)
+- [ ] Correlación gráfica: progreso vs `kneeStatus` (¿la molestia frena ganancias?)
+- [ ] Recordatorios push (requiere web push + permisos)
+- [ ] Foto pre/post sesión para diario visual
+- [ ] Plan auto-extendible (sem 9+ en mantenimiento al terminar las 8)
