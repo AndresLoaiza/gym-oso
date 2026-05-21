@@ -49,13 +49,20 @@ App web móvil PWA de entrenamiento para **Andrés "El Oso" Loaiza** (Medellín)
 ```json
 {
   "profile": { "weight":75, "height":175, "age":32, "knee":"bien",
-               "baseline":{ "legPress1RM":42, "w":30, "r":12, "date":"..." } },
+               "baseline":{
+                 "legPress1RM":42, "benchPress1RM":26, "pulldown1RM":30,
+                 "tests": { "leg_press_45":{w,r}, "banco_plano":{w,r}, "pulldown":{w,r} },
+                 "date":"..."
+               } },
   "apiKey": "sk-ant-…",
-  "plan": { "start":"YYYY-MM-DD", "weeks":[[{focus,notes,exercises:[...]}, ...]], "generatedBy":"local|ai" },
+  "plan": { "start":"YYYY-MM-DD",
+            "weeks":[[{focus,notes,exercises:[{id,name,sets,reps,weight,rest,isCardio,noWeight,note}]}, ...]],
+            "generatedBy":"local|ai" },
   "sessions": [
     { "date":"ISO", "exercises":[...], "planRef":{w:0,d:0}, "kneeStatus":"bien|leve|dolor" }
   ],
-  "sessionSets": { "0": {id, name, isCardio, note, sets:[{reps,weight,done}]} },
+  "sessionSets": { "0": {id, name, isCardio, noWeight, rest, note,
+                         sets:[{reps,weight,done,userAdded?}]} },
   "settings": { "wake": false },
   "lastExport": "ISO",
   "_currentRef": {w,d},
@@ -72,7 +79,11 @@ App web móvil PWA de entrenamiento para **Andrés "El Oso" Loaiza** (Medellín)
 1. Bienvenida + qué hace la app
 2. Perfil (peso, estatura, edad)
 3. Condición PFPS (estado rodilla hoy)
-4. Test baseline en Prensa 45° (Hammer) — calcula 1RM con fórmula Epley
+4. **Test baseline (3 compuestos):**
+   - Prensa 45° Hammer (compound pierna)
+   - Press de banca (compound empuje)
+   - Pulldown (compound tracción vertical)
+   - Cada uno calcula 1RM por Epley. Plan deriva pesos del resto por ratios NSCA.
 
 ### 🏠 Inicio
 - Card "Hoy" con próxima sesión del plan (Sem X · Día Y · Focus)
@@ -82,21 +93,41 @@ App web móvil PWA de entrenamiento para **Andrés "El Oso" Loaiza** (Medellín)
 - Action bar fija inferior: "▶ Empezar siguiente sesión"
 
 ### 📅 Plan
-- Plan periodizado de 8 semanas:
-  - Sem 1-2 adaptación → 3-5 fuerza → 6-7 resistencia trekking → 8 taper (-volumen)
+- Plan periodizado de 8 semanas (evidence-based ACSM 2026 + PFPS Physiopedia):
+  - Sem 1-2 adaptación (3×10-12 @ 55%, rest 90s)
+  - Sem 3-5 fuerza (4-5×6-8 compuestos @ 75-80%, rest 150-180s)
+  - Sem 6-7 resistencia trekking (3-4×12-15 @ 55-60%, rest 60s)
+  - Sem 8 taper (-1 set, intensidad mantenida)
   - 3 días/semana (A=pierna, B=tren superior, C=trekking-cardio)
+- **Volumen por máquina** (no uniforme):
+  - Compuestos multi-joint: 3-5 sets
+  - Sóleo: 4-6 sets (alta proporción fibra I, crítico descenso)
+  - VMO/abductor: 4-5 sets (prioridad PFPS)
+  - Isométrico wall sit: 3-5 holds, tiempo periodizado 20→45s
+  - Aislamiento pequeño (curl, leg ext, kickback): 2-3 sets
+- **Pesos derivados por ratios NSCA** desde 3 baselines:
+  - Banca→Press hombros 62%, Banca→Remo 90%, Banca→Curl 30%
+  - Prensa→Sóleo 55%, Prensa→Leg ext 18%, Prensa→Prone curl 32%, Prensa→Jack sq 50%
+- Cada ejercicio incluye `rest` (segundos) específico
 - Strip semanas con contador `N/3` por semana, ✓ si completa
 - Día completado se muestra con opacidad reducida
-- Action bar: "🤖 Regenerar plan con IA"
+- Action bars: "♻ Regenerar plan (sin IA)" + "🤖 Regenerar plan con IA"
 
 ### 💪 Hoy (rutina)
 - **Check-in rodilla pre-sesión** (modal, 3 opciones):
   - 😊 Bien → sesión normal
   - 😐 Molestia leve → cargas -20%, label "(-20% por molestia)"
   - 😣 Dolor >3/10 → quita Hack/Prensa/Leg Ext/Jack Squat, cargas restantes -40%, agrega isométricos + abductor VMO + StairMaster suave
-- Series con kg/reps editables + check + 🗑 borrar individual
-- Timer descanso 1:30 / 3:00 con vibración
-- "+ Añadir ejercicio" desde catálogo
+- Banner modo: series rectas (no circuito), 2-3 min entre ejercicios, glosario reps/series
+- Header columnas por ejercicio: `# | REPS | PESO (kg) | ✓`
+- Chip "⏱ Descanso: M:SS" por ejercicio (rest específico)
+- Series con kg/reps editables + check + 🗑 borrar individual (solo user-added; defaults protegidos)
+- **Time-only ex** (wall sit, cardio): columnas colapsan a `# | Tiempo | ✓`, input `type=text`, peso muestra "—"
+- Timer descanso diferenciado:
+  - **Serie** (naranja): usa `rest` del ejercicio, auto-dispara al marcar ✓
+  - **Cambio ejercicio** (lila): 2:30 fijo
+  - Label visible en banner del timer
+- "+ Añadir ejercicio" desde catálogo (auto-asigna rest 75s)
 - "↺ Reiniciar esta sesión" (descarta progreso, re-pregunta rodilla)
 - Action bar: "✓ Finalizar sesión"
 
@@ -115,7 +146,7 @@ App web móvil PWA de entrenamiento para **Andrés "El Oso" Loaiza** (Medellín)
 
 ### ⚙️ Config
 - API key Anthropic (input password)
-- Perfil editable + baseline visible
+- Perfil editable + **3 baselines visibles** (Prensa, Banca, Pulldown con sus 1RM + peso×reps usados)
 - Wake lock toggle (pantalla no se apaga durante sesión)
 - **Backup / Restore JSON** — exportar todo a archivo, importar desde archivo (sobrevive borrado de app, cambio de celular)
 - Reiniciar onboarding
@@ -128,6 +159,15 @@ App web móvil PWA de entrenamiento para **Andrés "El Oso" Loaiza** (Medellín)
 - Si no completa → mantiene peso
 - `nextSession()` retorna primer día no completado del plan (independiente del calendario — secuencial)
 - `adaptSessionForKnee(td, status)` ajusta carga y ejercicios según check-in pre-sesión
+
+## Helpers de generación de plan
+
+- `wLeg(f)`, `wBench(f)`, `wPull(f)` → derivan peso desde 1RM correspondiente, redondea a 2.5kg
+- `phase(week)` → `'adapt'|'str'|'end'|'taper'`
+- `taperize(day)` → reduce 1 set por ejercicio (semana 8)
+- Wall sit hold periodizado por fase (20-45s)
+- Ejercicios sin carga llevan `noWeight:true` (UI esconde columna peso)
+- Time-based ex (cardio + isométrico) usan `reps` string ("8 min", "30s") + input `type=text`
 
 ## Convenciones de código
 
@@ -152,6 +192,8 @@ git push  # GitHub Pages se actualiza ~1-2 min
 ```
 
 Al modificar `index.html`, **bump versión cache** en `sw.js` (`const CACHE = 'oso-gym-vN'`) para invalidar service worker.
+
+⚠ PWA iOS standalone: `confirm()` / `alert()` nativos pueden quedar bloqueados. Para flows críticos usar siempre `openModal()` con botones HTML (`window.openModal`/`window.closeModal` expuestos).
 
 ## Próximas mejoras posibles
 
