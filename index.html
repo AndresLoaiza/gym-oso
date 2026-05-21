@@ -62,7 +62,7 @@
   .screen.active { display: block; }
 
   /* ACTION BAR (fijo abajo) */
-  .action-bar { position: fixed; left: 0; right: 0; bottom: 0; background: linear-gradient(to top, var(--bg) 70%, transparent); padding: 14px 16px calc(14px + var(--safe-bot)); z-index: 90; max-width: 480px; margin: 0 auto; pointer-events: none; }
+  .action-bar { position: fixed; left: 0; right: 0; bottom: 0; background: linear-gradient(to top, var(--bg) 70%, transparent); padding: 14px 16px calc(14px + var(--safe-bot)); z-index: 90; max-width: 480px; margin: 0 auto; pointer-events: none; display: flex; flex-direction: column; gap: 8px; }
   .action-bar > * { pointer-events: auto; }
   .action-bar .btn { font-size: 15px; padding: 14px; }
   .section-title { font-family: 'Bebas Neue', sans-serif; font-size: 24px; letter-spacing: 1px; margin: 12px 0 10px; }
@@ -90,12 +90,19 @@
   label.field .lbl { display: block; font-size: 11px; color: var(--muted); margin-bottom: 4px; font-family: 'DM Mono', monospace; letter-spacing: 1px; text-transform: uppercase; }
 
   /* SET ROW */
-  .set-row { display: grid; grid-template-columns: 24px 1fr 1fr 38px 32px; gap: 4px; align-items: center; padding: 6px 0; }
+  .set-row { display: grid; grid-template-columns: 24px minmax(0,1fr) minmax(0,1fr) 38px; gap: 4px; align-items: center; padding: 6px 0; }
+  .set-row.with-del { grid-template-columns: 24px minmax(0,1fr) minmax(0,1fr) 38px 32px; }
+  .set-row.time-only { grid-template-columns: 24px minmax(0,1fr) 38px; }
+  .set-row.time-only.with-del { grid-template-columns: 24px minmax(0,1fr) 38px 32px; }
   .set-row .n { font-family: 'DM Mono', monospace; font-size: 12px; color: var(--muted); text-align: center; }
   .set-row input { padding: 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text); font-size: 13px; text-align: center; }
   .set-row .check { width: 38px; height: 38px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface2); color: var(--muted); font-size: 16px; }
   .set-row .check.done { background: var(--success); color: #000; border-color: var(--success); }
   .set-row .del { width: 32px; height: 38px; border-radius: 8px; border: 1px solid var(--border); background: transparent; color: var(--danger); font-size: 14px; opacity: 0.6; }
+  .set-row .set-empty { text-align: center; color: var(--muted); font-size: 14px; padding: 8px; }
+  .set-row.set-header { padding: 2px 0 4px; border-bottom: 1px solid var(--border); margin-bottom: 4px; }
+  .set-row.set-header .set-lbl { font-size: 10px; text-transform: uppercase; color: var(--muted); font-family: 'DM Mono', monospace; text-align: center; letter-spacing: 0.5px; }
+  .chip { display: inline-block; padding: 2px 8px; border-radius: 999px; background: var(--surface2); color: var(--muted); font-size: 11px; font-family: 'DM Mono', monospace; margin-top: 4px; }
   .set-row .del:active { opacity: 1; background: rgba(248,113,113,0.15); }
 
   /* PROGRESS */
@@ -106,6 +113,9 @@
   .timer-wrap { position: fixed; bottom: calc(90px + var(--safe-bot)); left: 50%; transform: translateX(-50%); background: var(--accent2); color: #fff; padding: 10px 18px; border-radius: 30px; font-family: 'DM Mono', monospace; font-weight: 700; font-size: 14px; display: none; z-index: 1000; box-shadow: 0 4px 12px rgba(0,0,0,0.5); }
   .timer-wrap.active { display: flex; align-items: center; gap: 10px; }
   .timer-wrap .stop { background: rgba(0,0,0,0.3); border: 0; color: #fff; border-radius: 50%; width: 28px; height: 28px; font-size: 14px; }
+  .timer-wrap.kind-ex { background: var(--accent); color: #000; }
+  #timer-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.8px; opacity: 0.85; padding: 2px 6px; border-radius: 6px; background: rgba(0,0,0,0.25); }
+  .timer-wrap.kind-ex #timer-label { background: rgba(0,0,0,0.15); }
 
   /* MODAL */
   .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.7); display: none; align-items: flex-end; z-index: 1500; }
@@ -332,6 +342,7 @@
   <button class="btn primary" id="finish-session">✓ Finalizar sesión</button>
 </div>
 <div class="action-bar" id="bar-plan" style="display:none">
+  <button class="btn" id="regen-local">♻ Regenerar plan (sin IA)</button>
   <button class="btn warn" id="regen-plan">🤖 Regenerar plan con IA</button>
 </div>
 
@@ -340,6 +351,7 @@
 
 <!-- TIMER -->
 <div class="timer-wrap" id="timer">
+  <span id="timer-label">Serie</span>
   <span id="timer-text">01:30</span>
   <button class="stop" id="timer-stop">✕</button>
 </div>
@@ -453,7 +465,14 @@ function $$(sel){ return document.querySelectorAll(sel); }
 
 /* ============= ONBOARDING ============= */
 let obStep = 0;
-const obData = { weight: 75, height: 175, age: 32, baselineEx: 'leg_press_45', baselineW: 30, baselineR: 12 };
+const obData = {
+  weight: 75, height: 175, age: 32,
+  tests: {
+    leg_press_45: { name:'Prensa 45° (pierna)', w:30, r:12, hint:'Pies altos y anchos. NO pasar 90°. Carga cómoda 12 reps.' },
+    banco_plano:  { name:'Press de banca (empuje)', w:20, r:10, hint:'Compuesto empuje. Carga cómoda 10 reps. Si nunca lo has hecho: empieza solo barra (20kg).' },
+    pulldown:     { name:'Pulldown (tracción)', w:25, r:10, hint:'Polea alta. Carga cómoda 10 reps. Empezar 20-30kg.' }
+  }
+};
 const OB_STEPS_COUNT = 4;
 
 function showOnboarding(){
@@ -495,24 +514,16 @@ function renderOnbStep(){
        <button class="pill" data-v="leve">Molestia leve</button>
        <button class="pill" data-v="dolor">Dolor &gt;3/10</button>
      </div>`,
-    `<h2>Test de baseline</h2>
-     <p>Haz un test seguro en la <b>Prensa de pierna 45° (Hammer)</b> — la más amigable con tu rodilla. Calcularemos tu ${term('1RM')} estimado con la fórmula ${term('Epley')}.</p>
-     <div class="card" style="background:var(--surface2); padding:10px; display:flex; gap:12px; align-items:center;">
-       ${thumb('leg_press_45','md')}
-       <div style="font-size:13px;">
-         <b>Prensa 45° Hammer</b><br>
-         <span class="small">Esta es la máquina. Toca foto para ampliar.</span>
-       </div>
-     </div>
-     <div class="pfps-warn"><b>Cómo hacerlo:</b><br>
-     1. Calienta 5 min en bici/StairMaster<br>
-     2. 2 series de 12 reps sin peso (solo plataforma) para soltar<br>
-     3. Pon un peso que creas hacer <b>cómodo 12 veces</b> (empieza 30-40kg)<br>
-     4. Haz reps controladas hasta 1 antes del fallo (${term('RIR')} 1). NO flexionar más de 90°<br>
-     5. Anota peso y reps reales:</div>
-     <label class="field"><span class="lbl">Peso usado (kg)</span><input class="input" id="ob-bw" type="number" inputmode="decimal" value="${obData.baselineW}"></label>
-     <label class="field"><span class="lbl">Reps completadas</span><input class="input" id="ob-br" type="number" inputmode="numeric" value="${obData.baselineR}"></label>
-     <div id="ob-1rm" class="small" style="margin-top:6px;"></div>`
+    `<h2>Test de baseline (3 máquinas)</h2>
+     <p>Test seguro en los <b>3 compuestos principales</b>. Calculamos tu ${term('1RM')} con ${term('Epley')} y derivamos peso para cada máquina del plan.</p>
+     <div class="pfps-warn"><b>Protocolo (mismo para los 3):</b><br>
+     1. Calienta 5 min bici/StairMaster<br>
+     2. 1-2 series ligeras de calentamiento<br>
+     3. Carga peso que creas hacer <b>cómodo</b> el # reps indicado (${term('RIR')} 1-2)<br>
+     4. Anota peso y reps reales. NO ir al fallo. PFPS: prensa no &gt;90° flexión.<br>
+     <b>Si nunca has hecho un ejercicio:</b> usa peso muy bajo, mide ahí. Mejor subestimar.</div>
+     <div id="ob-tests"></div>
+     <div id="ob-1rm" class="small" style="margin-top:8px;line-height:1.6;"></div>`
   ];
   wrap.innerHTML = screens[obStep];
 
@@ -528,15 +539,35 @@ function renderOnbStep(){
     obData.knee = obData.knee || 'bien';
   }
   if(obStep === 3){
+    const wrap2 = $('#ob-tests');
+    wrap2.innerHTML = Object.entries(obData.tests).map(([id, t]) => `
+      <div class="card" style="background:var(--surface2); padding:10px; margin-bottom:10px;">
+        <div style="display:flex; gap:10px; align-items:center; margin-bottom:6px;">
+          ${thumb(id,'md')}
+          <div style="font-size:13px; flex:1;">
+            <b>${t.name}</b><br>
+            <span class="small" style="opacity:0.85">${t.hint}</span>
+          </div>
+        </div>
+        <div style="display:flex; gap:8px;">
+          <label class="field" style="flex:1;"><span class="lbl">Peso (kg)</span><input class="input ob-w" data-id="${id}" type="number" inputmode="decimal" value="${t.w}"></label>
+          <label class="field" style="flex:1;"><span class="lbl">Reps</span><input class="input ob-r" data-id="${id}" type="number" inputmode="numeric" value="${t.r}"></label>
+        </div>
+      </div>
+    `).join('');
     const calc = () => {
-      const w = +$('#ob-bw').value || 0, r = +$('#ob-br').value || 0;
-      if(w && r){
-        const rm = epley1RM(w, r);
-        $('#ob-1rm').innerHTML = `1RM estimado: <b style="color:var(--accent)">${rm} kg</b> · Trabajo recomendado (12 reps @ 65%): <b>${workWeight(rm,0.65)} kg</b>`;
-      }
+      const rows = Object.entries(obData.tests).map(([id, t]) => {
+        const rm = epley1RM(t.w, t.r);
+        return { id, name:t.name, rm };
+      });
+      $('#ob-1rm').innerHTML = '<b>1RM estimados:</b><br>' + rows.map(r => `· ${r.name}: <b style="color:var(--accent)">${r.rm} kg</b>`).join('<br>');
     };
-    $('#ob-bw').addEventListener('input', calc);
-    $('#ob-br').addEventListener('input', calc);
+    $$('#ob-tests .ob-w').forEach(inp => inp.addEventListener('input', e => {
+      obData.tests[e.target.dataset.id].w = +e.target.value || 0; calc();
+    }));
+    $$('#ob-tests .ob-r').forEach(inp => inp.addEventListener('input', e => {
+      obData.tests[e.target.dataset.id].r = +e.target.value || 0; calc();
+    }));
     calc();
   }
   $('#ob-next').textContent = obStep === 3 ? 'Generar mi plan' : 'Siguiente';
@@ -549,13 +580,17 @@ $('#ob-next').addEventListener('click', async () => {
     obData.age = +$('#ob-a').value || 32;
   }
   if(obStep === 3){
-    obData.baselineW = +$('#ob-bw').value || 30;
-    obData.baselineR = +$('#ob-br').value || 12;
-    const rm = epley1RM(obData.baselineW, obData.baselineR);
+    const t = obData.tests;
     DB.profile = {
       weight: obData.weight, height: obData.height, age: obData.age,
       knee: obData.knee,
-      baseline: { legPress1RM: rm, w: obData.baselineW, r: obData.baselineR, date: todayISO() }
+      baseline: {
+        legPress1RM:    epley1RM(t.leg_press_45.w, t.leg_press_45.r),
+        benchPress1RM:  epley1RM(t.banco_plano.w,  t.banco_plano.r),
+        pulldown1RM:    epley1RM(t.pulldown.w,     t.pulldown.r),
+        tests: t,
+        date: todayISO()
+      }
     };
     saveDB();
     generateLocalPlan();
@@ -571,52 +606,123 @@ $('#ob-back').addEventListener('click', () => {
   renderOnbStep();
 });
 
-/* ============= PLAN LOCAL (determinista, sin IA) ============= */
+/* ============= PLAN LOCAL (determinista, sin IA) =============
+   Prescripciones basadas en ACSM 2026 Resistance Training Guidelines:
+   - Fuerza: 4-6 reps, 80% 1RM, 2-5 min descanso
+   - Hipertrofia: 6-12 reps, 67-85% 1RM, 60-90s descanso
+   - Resistencia muscular: 10-25 reps, <70% 1RM, 30-60s descanso
+   PFPS específico (Physiopedia / J Phys Ther Sci):
+   - VMO/abductor: endurance bias 12-20 reps, descanso corto
+   - Isométrico (wall sit): hold 20-45s, 3-5 sets, rest = work
+   - Leg extension arco corto (últimos 30°): carga baja, 12-15 reps
+   Fases: 0-1 adaptación · 2-4 fuerza/hipertrofia · 5-6 resistencia trekking · 7 taper */
 function generateLocalPlan(){
-  // 8 semanas, 3 días/semana (Lun/Mié/Vie), periodización fuerza→resistencia trekking
-  const rm = DB.profile?.baseline?.legPress1RM || 60;
-  const pct = (w) => Math.round(rm * w / 2.5) * 2.5;
+  // 1RMs base (con fallback)
+  const rmLeg   = DB.profile?.baseline?.legPress1RM   || 60;
+  const rmBench = DB.profile?.baseline?.benchPress1RM || 30;
+  const rmPull  = DB.profile?.baseline?.pulldown1RM   || 30;
+  const round = (v) => Math.max(2.5, Math.round(v / 2.5) * 2.5);
+  // pct() default sobre pierna (compat retro)
+  const pct = (w) => round(rmLeg * w);
+  // Helpers por compound base
+  const wLeg   = (f) => round(rmLeg * f);
+  const wBench = (f) => round(rmBench * f);
+  const wPull  = (f) => round(rmPull * f);
+  /* Ratios derivados (evidencia NSCA Essentials / Schoenfeld):
+     - Press hombros ≈ 60-65% banca
+     - Curl bíceps ≈ 35% banca (1RM); trabajo 25%
+     - Remo iso-lateral ≈ 90% banca (similar muscle mass)
+     - Leg extension arco corto ≈ 18% prensa (isolation quad PFPS-light)
+     - Prone leg curl ≈ 32% prensa
+     - Pantorrilla sóleo ≈ 55% prensa
+     - Jack squat ≈ 55% prensa (más glúteo, menos carga capaz)
+     - Adductor/abductor máq ≈ 25% prensa
+     - Crossover polea: carga baja standalone (8-12kg) */
+  const phase = (w) => w<2 ? 'adapt' : w<5 ? 'str' : w<7 ? 'end' : 'taper';
 
-  // Plantillas por tipo de día
-  const dayA = (week) => ({  // Pierna fuerte (cuádriceps + glúteo, PFPS-safe)
-    focus: 'Pierna · Cuádriceps',
-    notes: 'Pies altos en prensa. ROM parcial. Calentar 5 min bici.',
-    exercises: [
-      { id:'stairmaster', name:'StairMaster (calentamiento)', sets: 1, reps: '8 min', isCardio:true },
-      { id:'leg_press_45', name:'Prensa 45° (pies altos)', sets: week<3?3:4, reps: 12, weight: pct(week<3?0.55:0.65) },
-      { id:'leg_ext', name:'Extensión cuádriceps (últimos 30°)', sets: 3, reps: 15, weight: 10, note:'Solo arco corto. Si dolor → omitir.' },
-      { id:'prone_leg_curl', name:'Prone Leg Curl', sets: 3, reps: 12, weight: 15, note:'Balance femoral/cuádriceps clave para rodilla.' },
-      { id:'pantorrilla_sentado', name:'Pantorrilla sentado', sets: 3, reps: 15, weight: 25, note:'Sóleo: clave para descenso de montaña.' },
-      { id:'crossover', name:'Abducción cadera en polea', sets: 3, reps: 15, weight: 10, note:'Vasto medial oblicuo.' },
-      { id:'_wall_sit', name:'Sentadilla a pared (isométrico)', sets: 3, reps: '30s', weight: 0 }
-    ]
-  });
-  const dayB = (week) => ({  // Tren superior
-    focus: 'Tren superior',
-    notes: 'Empuje + tracción.',
-    exercises: [
-      { id:'banco_plano', name:'Press de banca', sets: 3, reps: 10, weight: 20 },
-      { id:'remo_isolateral', name:'Remo Iso-Lateral', sets: 3, reps: 12, weight: 15 },
-      { id:'press_hombros_107', name:'Press de hombros', sets: 3, reps: 10, weight: 10 },
-      { id:'pulldown', name:'Pulldown (polea alta)', sets: 3, reps: 12, weight: 20 },
-      { id:'camber_curl', name:'Curl bíceps Camber', sets: 3, reps: 12, weight: 10 }
-    ]
-  });
-  const dayC = (week) => ({  // Trekking-specific cardio + funcional
-    focus: 'Trekking · Cardio funcional',
-    notes: 'Mimética del esfuerzo de montaña.',
-    exercises: [
-      { id:'trotadora', name:'Caminata inclinada 10-12%', sets: 1, reps: `${15+week*2} min`, isCardio:true },
-      { id:'stairmaster', name:'StairMaster constante', sets: 1, reps: `${10+week} min`, isCardio:true },
-      { id:'jack_squat', name:'Jack Squat (ROM parcial)', sets: 3, reps: 15, weight: pct(0.5) },
-      { id:'adductor_abductor', name:'Abductor (foco vasto medial)', sets: 3, reps: 15, weight: 20, note:'Pieza clave PFPS: glúteo medio + VMO.' },
-      { id:'mancuernas', name:'Step-up con mancuernas (banco bajo)', sets: 3, reps: 12, weight: 8, note:'Banco bajo, sube despacio.' },
-      { id:'hiper_inversa', name:'Hiperextensión inversa', sets: 3, reps: 12, weight: 10, note:'Cadena posterior sin estresar rótula.' },
-      { id:'crossover', name:'Glute kickback en polea', sets: 3, reps: 12, weight: 10 }
-    ]
-  });
+  const dayA = (week) => {
+    const ph = phase(week);
+    // Prensa = compuesto principal multi-joint → 3-5 sets (Schoenfeld dose-response)
+    const prensa = ph==='adapt' ? {sets:3, reps:12, rest:90,  weight:wLeg(0.55)}
+                 : ph==='str'   ? {sets:5, reps:6,  rest:180, weight:wLeg(0.75)}
+                 : ph==='end'   ? {sets:4, reps:15, rest:60,  weight:wLeg(0.55)}
+                 :                {sets:3, reps:10, rest:90,  weight:wLeg(0.60)};
+    // Wall sit isométrico: 3-5 holds según fase (NSCA/ACSM isometric protocols)
+    const wallSets = ph==='str' ? 5 : ph==='end' ? 4 : 3;
+    const wallHold = ph==='adapt' ? '20s' : ph==='str' ? '45s' : ph==='end' ? '45s' : '30s';
+    // Sóleo: 4-6 sets (alta proporción fibra I, requiere volumen — Wackerhage 2018)
+    const soleoSets = ph==='taper' ? 3 : ph==='str' ? 5 : 4;
+    // VMO/abductor: prioridad PFPS, 4-5 sets endurance (Physiopedia PFPS guidelines)
+    const vmoSets = ph==='taper' ? 3 : 4;
+    return {
+      focus: 'Pierna · Cuádriceps',
+      notes: 'Pies altos en prensa. ROM parcial (no pasar 90°). Calentar 5 min bici.',
+      exercises: [
+        { id:'stairmaster', name:'StairMaster (calentamiento)', sets:1, reps:'8 min', rest:0, isCardio:true },
+        { id:'leg_press_45', name:'Prensa 45° (pies altos)', ...prensa, note:`Compuesto principal multi-joint. ${prensa.sets} sets (ACSM compounds). RIR 2.` },
+        { id:'leg_ext', name:'Extensión cuádriceps (últimos 30°)', sets: ph==='adapt'?2:3, reps:15, weight:wLeg(0.18), rest:60, note:'Aislamiento PFPS-sensible: 2-3 sets máx. Solo arco corto. Dolor → omitir.' },
+        { id:'prone_leg_curl', name:'Prone Leg Curl', sets:3, reps:10, weight:wLeg(0.32), rest:75, note:'Aislamiento isquio: 3 sets. Balance H:Q para protección rotuliana.' },
+        { id:'pantorrilla_sentado', name:'Pantorrilla sentado (sóleo)', sets:soleoSets, reps:15, weight:wLeg(0.55), rest:60, note:`Sóleo: ${soleoSets} sets (fibra tipo I, alto volumen). Crítico descenso montaña.` },
+        { id:'crossover', name:'Abducción cadera en polea', sets:vmoSets, reps:15, weight:10, rest:45, note:`VMO + glúteo medio: ${vmoSets} sets (prioridad PFPS endurance). Carga baja standalone.` },
+        { id:'_wall_sit', name:'Sentadilla a pared (isométrico)', sets:wallSets, reps:wallHold, noWeight:true, rest:60, note:`Isométrico: ${wallSets} holds. 60-90° rodilla.` }
+      ]
+    };
+  };
 
-  // Taper semana 8: bajar volumen 40%
+  const dayB = (week) => {
+    const ph = phase(week);
+    // Compuestos tren superior: 3-5 sets (ACSM 2026 strength)
+    const comp = ph==='adapt' ? {sets:3, reps:10, rest:90}
+               : ph==='str'   ? {sets:5, reps:5,  rest:180}
+               : ph==='end'   ? {sets:4, reps:12, rest:60}
+               :                {sets:3, reps:8,  rest:90};
+    // Press hombros (compound secundario): 3-4 sets
+    const ohpSets = ph==='str' ? 4 : 3;
+    // Pulldown (compound tracción vertical): 3-4 sets
+    const pdSets = ph==='str' ? 4 : 3;
+    // Curl bíceps (aislamiento pequeño): 2-3 sets (Schoenfeld diminishing returns)
+    const curlSets = ph==='adapt'||ph==='taper' ? 2 : 3;
+    return {
+      focus: 'Tren superior',
+      notes: 'Empuje + tracción balanceados. Compuestos primero. RIR 2.',
+      // Pesos derivados: pct sobre 1RM medido en baseline
+      exercises: (() => {
+        const benchPct = ph==='adapt' ? 0.65 : ph==='str' ? 0.80 : ph==='end' ? 0.60 : 0.70;
+        const pullPct  = ph==='adapt' ? 0.65 : ph==='str' ? 0.80 : ph==='end' ? 0.60 : 0.70;
+        return [
+          { id:'banco_plano', name:'Press de banca', ...comp, weight:wBench(benchPct), note:`Compuesto principal empuje: ${comp.sets} sets @ ${Math.round(benchPct*100)}% 1RM.` },
+          { id:'remo_isolateral', name:'Remo Iso-Lateral', sets:comp.sets, reps:comp.reps+2, rest:comp.rest, weight:wBench(0.90*benchPct), note:`Compuesto tracción: ${comp.sets} sets. ≈90% carga banca.` },
+          { id:'press_hombros_107', name:'Press de hombros', sets:ohpSets, reps:10, weight:wBench(0.62), rest:90, note:`Compuesto secundario: ${ohpSets} sets. ≈62% banca (NSCA ratio).` },
+          { id:'pulldown', name:'Pulldown (polea alta)', sets:pdSets, reps:10, weight:wPull(pullPct), rest:75, note:`Tracción vertical: ${pdSets} sets @ ${Math.round(pullPct*100)}% 1RM pulldown.` },
+          { id:'camber_curl', name:'Curl bíceps Camber', sets:curlSets, reps:12, weight:wBench(0.30), rest:60, note:`Aislamiento pequeño: ${curlSets} sets. ≈30% banca.` }
+        ];
+      })()
+    };
+  };
+
+  const dayC = (week) => {
+    const ph = phase(week);
+    const jack = ph==='str' ? {sets:4, reps:8, rest:120} : ph==='end' ? {sets:3, reps:15, rest:60} : ph==='taper' ? {sets:2, reps:10, rest:90} : {sets:3, reps:12, rest:75};
+    // Step-up (compound unilateral): 3-4 sets por pierna
+    const stepSets = ph==='str' ? 4 : 3;
+    // Glute kickback (aislamiento): 2-3 sets
+    const kickSets = ph==='adapt'||ph==='taper' ? 2 : 3;
+    return {
+      focus: 'Trekking · Cardio funcional',
+      notes: 'Mimética montaña. Cardio + cadenas posteriores + estabilizadores.',
+      exercises: [
+        { id:'trotadora', name:'Caminata inclinada 10-12%', sets:1, reps:`${15+week*2} min`, rest:0, isCardio:true, note:'Inclinación alta. Sin trote.' },
+        { id:'stairmaster', name:'StairMaster constante', sets:1, reps:`${10+week} min`, rest:0, isCardio:true, note:'Nivel progresivo.' },
+        { id:'jack_squat', name:'Jack Squat (ROM parcial)', ...jack, weight:wLeg(0.50), note:`Compuesto pierna: ${jack.sets} sets. ≈50% prensa (más glúteo). ROM parcial.` },
+        { id:'adductor_abductor', name:'Abductor (foco VMO)', sets:4, reps:15, weight:wLeg(0.25), rest:45, note:'VMO + glúteo medio: 4 sets ≈25% prensa (prioridad PFPS).' },
+        { id:'mancuernas', name:'Step-up con mancuernas (banco bajo)', sets:stepSets, reps:10, weight:Math.min(15, Math.max(5, Math.round(rmBench*0.12/2.5)*2.5)), rest:75, note:`Compuesto unilateral trekking-specific: ${stepSets} sets/pierna. Mancuerna ≈12% banca.` },
+        { id:'hiper_inversa', name:'Hiperextensión inversa', sets:3, reps:12, weight:wLeg(0.15), rest:60, note:'Cadena posterior: 3 sets. Sin estrés rotuliano.' },
+        { id:'crossover', name:'Glute kickback en polea', sets:kickSets, reps:12, weight:10, rest:45, note:`Aislamiento glúteo mayor: ${kickSets} sets. Carga baja standalone.` }
+      ]
+    };
+  };
+
+  // Taper semana 8: bajar volumen ~30% (ACSM: deload mantiene intensidad, baja volumen)
   const taperize = (day) => ({
     ...day,
     exercises: day.exercises.map(e => ({...e, sets: Math.max(1, e.sets-1)}))
@@ -655,7 +761,9 @@ async function regenerateWithAI(){
   * Leg Extension solo arco corto (últimos 30°)
   * NO plyometrics, NO box jumps, NO lunges profundos
   * Cardio: StairMaster progresivo, caminata inclinada, bici. NO trotar.
-- 1RM Prensa 45° estimado: ${DB.profile.baseline.legPress1RM}kg
+- 1RM Prensa 45°: ${DB.profile.baseline.legPress1RM}kg
+- 1RM Press banca: ${DB.profile.baseline.benchPress1RM || 'n/a'}kg
+- 1RM Pulldown: ${DB.profile.baseline.pulldown1RM || 'n/a'}kg
 - 3 días/semana
 - Periodización: Sem 1-2 adaptación, 3-5 fuerza, 6-7 resistencia trekking, 8 taper.
 
@@ -815,6 +923,29 @@ function showWeek(i){
   $('#plan-detail').innerHTML = html;
 }
 $('#regen-plan').addEventListener('click', regenerateWithAI);
+$('#regen-local').addEventListener('click', () => {
+  openModal(`
+    <h2>Regenerar plan (sin IA)</h2>
+    <p>Se reinicia desde semana 1 con prescripciones actualizadas (ACSM 2026 + PFPS). Tu historial NO se borra.</p>
+    <div class="btn-row" style="margin-top:14px;">
+      <button class="btn" id="rg-cancel">Cancelar</button>
+      <button class="btn primary" id="rg-go">Regenerar</button>
+    </div>
+  `);
+  $('#rg-cancel').addEventListener('click', closeModal);
+  $('#rg-go').addEventListener('click', () => {
+    try {
+      DB.sessionSets = {}; DB._currentRef = null; DB._kneeStatus = null; DB._adaptedSession = null;
+      generateLocalPlan();
+      closeModal();
+      renderPlan();
+      openModal(`<h2>✓ Plan regenerado</h2><p>Volumen y pesos derivados de tu baseline (ACSM 2026 + PFPS).</p><div class="btn-row"><button class="btn primary" onclick="closeModal()">OK</button></div>`);
+    } catch(err) {
+      closeModal();
+      openModal(`<h2>Error</h2><pre style="white-space:pre-wrap;font-size:11px;">${err.message}\n${err.stack||''}</pre><div class="btn-row"><button class="btn" onclick="closeModal()">OK</button></div>`);
+    }
+  });
+});
 
 /* ============= RUTINA HOY ============= */
 function askKneeCheckin(onDone){
@@ -853,9 +984,9 @@ function adaptSessionForKnee(td, status){
     const avoid = new Set(['leg_ext','sentadilla_hack','leg_press_45','jack_squat','hack_squat']);
     const kept = td.exercises.filter(e => !avoid.includes(e.id));
     const extra = [
-      { id:'_wall_sit', name:'Sentadilla a pared (isométrico)', sets:4, reps:'30s', weight:0, note:'Día con dolor: isométricos para activar VMO sin estresar rótula.' },
-      { id:'adductor_abductor', name:'Abductor (foco VMO)', sets:3, reps:15, weight:15, note:'Foco vasto medial oblicuo.' },
-      { id:'stairmaster', name:'StairMaster suave', sets:1, reps:'10 min', weight:0, isCardio:true, note:'Nivel bajo. Si dolor → parar.' }
+      { id:'_wall_sit', name:'Sentadilla a pared (isométrico)', sets:4, reps:'30s', noWeight:true, rest:45, note:'Día con dolor: isométricos para activar VMO sin estresar rótula.' },
+      { id:'adductor_abductor', name:'Abductor (foco VMO)', sets:3, reps:15, weight:15, rest:45, note:'Foco vasto medial oblicuo.' },
+      { id:'stairmaster', name:'StairMaster suave', sets:1, reps:'10 min', rest:0, isCardio:true, note:'Nivel bajo. Si dolor → parar.' }
     ];
     return { ...td,
       focus: td.focus + ' (ADAPTADO POR DOLOR)',
@@ -884,7 +1015,11 @@ function renderRutina(){
       DB._adaptedSession = td;
       DB.sessionSets = {};
       td.exercises.forEach((ex, idx) => {
-        DB.sessionSets[idx] = { id: ex.id, name: ex.name, isCardio: ex.isCardio || false,
+        const isTime = typeof ex.reps === 'string' && /s$|min/.test(ex.reps);
+        const noW = ex.noWeight || (isTime && !ex.weight) || ex.id === '_wall_sit';
+        DB.sessionSets[idx] = { id: ex.id, name: ex.name,
+          isCardio: ex.isCardio || false, noWeight: noW,
+          rest: ex.rest ?? 90,
           sets: Array.from({length: ex.sets}, () => ({ reps: ex.reps, weight: ex.weight || 0, done: false })),
           note: ex.note || '' };
       });
@@ -903,17 +1038,34 @@ function renderRutinaInner(ns, td){
   $('#rutina-title').textContent = `S${ns.weekIdx+1}·D${ns.dayIdx+1} — ${td.focus}`;
 
   const list = $('#rutina-list');
-  list.innerHTML = '';
+  list.innerHTML = `<div class="card" style="background:var(--surface2);padding:10px 12px;">
+    <div class="small" style="line-height:1.5;">
+      <b>Modo:</b> Series rectas. Termina las series de un ejercicio (con su descanso entre series) antes de pasar al siguiente.<br>
+      <b>Descanso entre ejercicios:</b> 2-3 min (mientras cambias máquina).<br>
+      <b>Recuerda:</b> "3 series × 12 reps" = 3 rondas haciendo 12 repeticiones cada una.
+    </div>
+  </div>`;
   Object.entries(DB.sessionSets).forEach(([idx, ex]) => {
     const div = document.createElement('div');
     div.className = 'card';
-    div.innerHTML = `<div class="row-with-thumb">${thumb(ex.id,'md')}<div class="grow"><h3>${ex.name}</h3></div></div>
+    const restSec = ex.rest ?? 90;
+    const restLabel = restSec >= 60 ? `${Math.floor(restSec/60)}:${String(restSec%60).padStart(2,'0')}` : `${restSec}s`;
+    const restChip = restSec > 0 ? `<span class="chip">⏱ Descanso: ${restLabel}</span>` : '';
+    const hideW = ex.isCardio || ex.noWeight;
+    const isTimeRowsHeader = ex.sets.some(s => typeof s.reps === 'string' && /s$|min/.test(s.reps));
+    const timeOnly = hideW && (ex.isCardio || ex.noWeight || isTimeRowsHeader);
+    const wHeader = hideW ? (ex.isCardio ? 'Tiempo' : 'Bodyweight') : 'Peso (kg)';
+    const headerCells = timeOnly
+      ? `<div class="n">#</div><div class="set-lbl">Tiempo</div><div class="set-lbl">✓</div>`
+      : `<div class="n">#</div><div class="set-lbl">${ex.isCardio?'Tiempo':'Reps'}</div><div class="set-lbl">${wHeader}</div><div class="set-lbl">✓</div>`;
+    div.innerHTML = `<div class="row-with-thumb">${thumb(ex.id,'md')}<div class="grow"><h3>${ex.name}</h3>${restChip}</div></div>
       ${ex.note ? `<div class="pfps-warn">${ex.note}</div>` : ''}
+      <div class="set-row set-header${timeOnly?' time-only':''}">${headerCells}</div>
       <div id="sets-${idx}"></div>
-      <div class="btn-row" style="margin-top:8px;">
+      <div class="btn-row" style="margin-top:8px;flex-wrap:wrap;gap:6px;">
         <button class="btn small" data-act="add-set" data-i="${idx}">+ Serie</button>
-        <button class="btn small" data-act="rest-90" data-i="${idx}">⏱ 1:30</button>
-        <button class="btn small" data-act="rest-180" data-i="${idx}">⏱ 3:00</button>
+        ${restSec > 0 ? `<button class="btn small" data-act="rest-serie" data-i="${idx}" data-r="${restSec}">⏱ Serie ${restLabel}</button>` : ''}
+        <button class="btn small" data-act="rest-ex" data-i="${idx}" data-r="150">⏱ Cambio ej. 2:30</button>
       </div>`;
     list.appendChild(div);
     renderSets(idx);
@@ -925,10 +1077,10 @@ function renderRutinaInner(ns, td){
       const i = b.dataset.i;
       if(b.dataset.act === 'add-set'){
         const last = DB.sessionSets[i].sets.at(-1) || { reps: 10, weight: 0, done: false };
-        DB.sessionSets[i].sets.push({ reps: last.reps, weight: last.weight, done: false });
+        DB.sessionSets[i].sets.push({ reps: last.reps, weight: last.weight, done: false, userAdded: true });
         saveDB(); renderSets(i); updateProgress();
-      } else if(b.dataset.act === 'rest-90'){ startTimer(90); }
-      else if(b.dataset.act === 'rest-180'){ startTimer(180); }
+      } else if(b.dataset.act === 'rest-serie'){ startTimer(+b.dataset.r, 'serie'); }
+      else if(b.dataset.act === 'rest-ex'){ startTimer(+b.dataset.r, 'ejercicio'); }
     });
   });
 
@@ -939,28 +1091,53 @@ function renderSets(i){
   const ex = DB.sessionSets[i];
   const wrap = $('#sets-'+i);
   wrap.innerHTML = '';
+  const isTimeBased = ex.sets.some(s => typeof s.reps === 'string' && /s$|min/.test(s.reps));
+  const hideWeight = ex.isCardio || ex.noWeight || (isTimeBased && ex.sets.every(s => !s.weight));
+  const textReps = ex.isCardio || ex.noWeight || isTimeBased;
+  const timeOnly = hideWeight && (ex.isCardio || ex.noWeight || isTimeBased);
+  // Fallback template para series con 0: usa primera serie con valor válido
+  const repsTpl = ex.sets.find(s => s.reps && s.reps !== 0 && s.reps !== '0')?.reps || '';
   ex.sets.forEach((s, j) => {
     const row = document.createElement('div');
-    row.className = 'set-row';
-    row.innerHTML = `<div class="n">${j+1}</div>
-      <input type="${ex.isCardio?'text':'number'}" inputmode="${ex.isCardio?'text':'decimal'}" value="${s.reps}" placeholder="reps">
-      <input type="number" inputmode="decimal" value="${s.weight}" placeholder="kg" ${ex.isCardio?'disabled':''}>
-      <button class="check ${s.done?'done':''}">${s.done?'✓':'○'}</button>
-      <button class="del" title="Borrar serie">🗑</button>`;
-    const [, repsI, wI, btn, delBtn] = row.children;
-    repsI.addEventListener('change', e => { s.reps = ex.isCardio ? e.target.value : (+e.target.value || 0); saveDB(); });
-    wI.addEventListener('change', e => { s.weight = +e.target.value || 0; saveDB(); });
+    row.className = 'set-row' + (s.userAdded ? ' with-del' : '');
+    const weightCell = hideWeight
+      ? `<div class="set-empty">—</div>`
+      : `<input type="number" inputmode="decimal" value="${s.weight}" placeholder="kg">`;
+    const needsFill = textReps && (s.reps === 0 || s.reps === '0' || s.reps === '');
+    const repsVal = needsFill ? repsTpl : s.reps;
+    if(needsFill && repsTpl) { s.reps = repsVal; saveDB(); }
+    row.className = 'set-row' + (s.userAdded ? ' with-del' : '') + (timeOnly ? ' time-only' : '');
+    const cells = timeOnly
+      ? `<div class="n">${j+1}</div>
+         <input type="text" inputmode="text" value="${repsVal}" placeholder="tiempo">
+         <button class="check ${s.done?'done':''}">${s.done?'✓':'○'}</button>
+         ${s.userAdded ? '<button class="del" title="Borrar serie">🗑</button>' : ''}`
+      : `<div class="n">${j+1}</div>
+         <input type="${textReps?'text':'number'}" inputmode="${textReps?'text':'decimal'}" value="${repsVal}" placeholder="${textReps?'tiempo':'reps'}">
+         ${weightCell}
+         <button class="check ${s.done?'done':''}">${s.done?'✓':'○'}</button>
+         ${s.userAdded ? '<button class="del" title="Borrar serie">🗑</button>' : ''}`;
+    row.innerHTML = cells;
+    const repsI = row.children[1];
+    const wEl = timeOnly ? null : row.children[2];
+    const btn = timeOnly ? row.children[2] : row.children[3];
+    const delBtn = s.userAdded ? row.children[timeOnly ? 3 : 4] : null;
+    repsI.addEventListener('change', e => { s.reps = textReps ? e.target.value : (+e.target.value || 0); saveDB(); });
+    if(!hideWeight){
+      wEl.addEventListener('change', e => { s.weight = +e.target.value || 0; saveDB(); });
+    }
     btn.addEventListener('click', () => {
       s.done = !s.done;
       btn.className = 'check ' + (s.done ? 'done' : '');
       btn.textContent = s.done ? '✓' : '○';
-      if(s.done && !ex.isCardio) { startTimer(90); if(navigator.vibrate) navigator.vibrate(50); }
+      if(s.done && !ex.isCardio) { startTimer(ex.rest ?? 90, 'serie'); if(navigator.vibrate) navigator.vibrate(50); }
       saveDB(); updateProgress();
     });
-    delBtn.addEventListener('click', () => {
-      if(ex.sets.length <= 1){ alert('No puedes borrar la única serie. Borra el ejercicio completo si lo necesitas.'); return; }
-      ex.sets.splice(j, 1); saveDB(); renderSets(i); updateProgress();
-    });
+    if(delBtn){
+      delBtn.addEventListener('click', () => {
+        ex.sets.splice(j, 1); saveDB(); renderSets(i); updateProgress();
+      });
+    }
     wrap.appendChild(row);
   });
 }
@@ -985,7 +1162,7 @@ $('#add-exercise').addEventListener('click', () => {
   $$('#modal [data-id]').forEach(b => b.addEventListener('click', () => {
     const m = CATALOGO.find(x => x.id === b.dataset.id);
     const newIdx = Object.keys(DB.sessionSets).length;
-    DB.sessionSets[newIdx] = { id: m.id, name: m.name, isCardio: false, note: m.note || '',
+    DB.sessionSets[newIdx] = { id: m.id, name: m.name, isCardio: false, noWeight: false, rest: 75, note: m.note || '',
       sets: [{reps:10, weight:10, done:false},{reps:10, weight:10, done:false},{reps:10, weight:10, done:false}] };
     saveDB(); closeModal(); renderRutina();
   }));
@@ -1014,11 +1191,13 @@ $('#finish-session').addEventListener('click', () => {
 
 /* ============= TIMER ============= */
 let timerInt = null;
-function startTimer(sec){
+function startTimer(sec, kind = 'serie'){
   clearInterval(timerInt);
   let r = sec;
   const t = $('#timer');
   t.classList.add('active');
+  t.classList.toggle('kind-ex', kind === 'ejercicio');
+  $('#timer-label').textContent = kind === 'ejercicio' ? 'Cambio' : 'Serie';
   const tick = () => {
     const m = Math.floor(r/60), s = r%60;
     $('#timer-text').textContent = `${m}:${String(s).padStart(2,'0')}`;
@@ -1139,10 +1318,16 @@ function renderConfig(){
   $('#cfg-key').value = DB.apiKey || '';
   $('#cfg-wake').checked = !!DB.settings.wake;
   const p = DB.profile || {};
+  const b = p.baseline || {};
+  const tests = b.tests || {};
+  const rmRow = (label, rm) => rm ? `${label}: <b style="color:var(--accent)">${rm} kg</b> 1RM` : '';
   $('#cfg-profile').innerHTML = `<div class="small">
     Peso ${p.weight}kg · Estatura ${p.height}cm · Edad ${p.age}<br>
     Rodilla: ${p.knee || '—'}<br>
-    Baseline Prensa 45°: ${p.baseline?.w}kg × ${p.baseline?.r}reps → 1RM est. <b style="color:var(--accent)">${p.baseline?.legPress1RM}kg</b>
+    <b>Baselines (${b.date || '—'}):</b><br>
+    ${rmRow('Prensa 45°', b.legPress1RM)}${tests.leg_press_45 ? ` (${tests.leg_press_45.w}×${tests.leg_press_45.r})` : ''}<br>
+    ${rmRow('Press banca', b.benchPress1RM)}${tests.banco_plano ? ` (${tests.banco_plano.w}×${tests.banco_plano.r})` : ''}<br>
+    ${rmRow('Pulldown', b.pulldown1RM)}${tests.pulldown ? ` (${tests.pulldown.w}×${tests.pulldown.r})` : ''}
   </div>`;
   const le = $('#last-export');
   if(le) le.textContent = DB.lastExport ? new Date(DB.lastExport).toLocaleString('es') : 'nunca';
@@ -1200,6 +1385,8 @@ $('#reset-onb').addEventListener('click', () => {
 /* ============= MODAL ============= */
 function openModal(html){ $('#modal').innerHTML = html; $('#modal-back').classList.add('active'); }
 function closeModal(){ $('#modal-back').classList.remove('active'); }
+window.openModal = openModal;
+window.closeModal = closeModal;
 $('#modal-back').addEventListener('click', e => { if(e.target.id === 'modal-back') closeModal(); });
 
 /* ============= WAKE LOCK ============= */
