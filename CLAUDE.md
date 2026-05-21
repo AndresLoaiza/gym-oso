@@ -81,7 +81,8 @@ App web móvil PWA de entrenamiento para **Andrés "El Oso" Loaiza** (Medellín)
    - Prensa 45° Hammer (compound pierna)
    - Press de banca (compound empuje)
    - Pulldown (compound tracción vertical)
-   - Cada uno calcula 1RM por Epley. Plan deriva pesos del resto por ratios NSCA.
+   - Cada uno calcula 1RM por **fórmula híbrida**: Epley (≤10 reps) / Mayhew (>10 reps). Mayhew evita sobreestimación cuando user empuja tests >12 reps (Epley invalida ~15% arriba). Plan deriva pesos del resto por ratios NSCA.
+   - Migración v2 al boot: si `baseline.tests` existe y `formulaVersion !== 2`, recalcula 1RMs + regenera plan. Idempotente.
 
 ### 🏠 Inicio
 - Card "Hoy" con próxima sesión del plan (Sem X · Día Y · Focus)
@@ -113,6 +114,12 @@ App web móvil PWA de entrenamiento para **Andrés "El Oso" Loaiza** (Medellín)
 - Sin botones de regeneración manual (plan deriva siempre de baseline + ciencia)
 
 ### 💪 Hoy (rutina)
+- **Botón "ℹ Cómo usar"** en cada ejercicio (si existe `HOWTO[ex.id]`) abre modal con 3 secciones:
+  - ⚙ Setup / Panel (config StairMaster botones MODE/USER/LEVEL/Manual, Hammer pies altos+anchos, leg ext tope mecánico, wall sit ~50cm pared, etc.)
+  - 🎯 Configuración (ROM, tempo excéntrica, cargas progresión por semana)
+  - 🦵 Reglas PFPS (ángulos seguros, alineación rodilla-pie, dolor-stop)
+- Dict `HOWTO` (`index.html`) cubre 16 ejercicios: stairmaster, trotadora, leg_press_45, leg_ext, prone_leg_curl, pantorrilla_sentado, crossover, _wall_sit, banco_plano, jack_squat, mancuernas (step-up), press_hombros_107, remo_isolateral, pulldown, hiper_inversa, camber_curl, adductor_abductor.
+- Texto basado en NSCA + Physiopedia PFPS + Z2 HR trekking (113-132 bpm para HRmax 188).
 - **Check-in rodilla pre-sesión** (modal, 3 opciones):
   - 😊 Bien → sesión normal
   - 😐 Molestia leve → cargas -20%, label "(-20% por molestia)"

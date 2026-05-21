@@ -441,6 +441,301 @@ function openTerm(key){
 }
 window.openTerm = openTerm;
 
+/* ============= HOWTO (config máquina + técnica PFPS) ============= */
+const HOWTO = {
+  'stairmaster': {
+    title: 'StairMaster — escaladora',
+    setup: [
+      'Botón <b>MODE</b> → seleccionar <b>Manual</b> (no PROG/FAT).',
+      'Botón <b>USER</b> → meter peso 90 / edad 32 (solo para calorías).',
+      'Flechas <b>↑↓</b> derecha → ajustar <b>LEVEL</b>.',
+      '<b>▶ Play</b> para arrancar.'
+    ],
+    cfg: [
+      '<b>Warmup (día A pierna):</b> LEVEL 2-3 · 8 min · HR ~110 bpm.',
+      '<b>Principal (día C trekking):</b> LEVEL 4→6 progresivo · 10-17 min · HR 113-132 bpm (Z2).',
+      'Sem 1-2: LEVEL 4 · Sem 3-5: LEVEL 5 · Sem 6-7: LEVEL 6 · Sem 8 taper: LEVEL 5.',
+      'Subir LEVEL solo si sesión previa terminó en RPE 5-6/10 cómodo.'
+    ],
+    pfps: [
+      '<b>NO te cuelgues del barandal.</b> Manos apoyo ligero balance solo.',
+      'Postura erguida, mirada al frente, core activo.',
+      'Paso completo, pie plano, no puntas, no saltar escalones.',
+      'Cadencia 50-60 pasos/min. Más rápido = flexión más profunda = PFPS.',
+      'No pasar 90° flexión rodilla. Si LEVEL fuerza step grande → bajar.',
+      'Detener si dolor rodilla >3/10.'
+    ]
+  },
+  'trotadora': {
+    title: 'Caminata inclinada (NO trote)',
+    setup: [
+      'Velocidad: <b>4.5-5.5 km/h</b> (caminar firme, no trotar).',
+      'Inclinación: <b>10-12%</b> sostenida.',
+      'Sem 1-2: 15 min · Sem 3-5: 17-19 min · Sem 6-7: 21-25 min · Sem 8: 29 min.'
+    ],
+    cfg: [
+      'Objetivo HR Z2: <b>113-132 bpm</b>.',
+      'Si HR >140 → bajar velocidad antes que inclinación (inclinación es lo que entrena para montaña).'
+    ],
+    pfps: [
+      'NUNCA trotar — impacto contraindicado PFPS.',
+      'Pisada completa talón → punta.',
+      'No agarrarse del frente (descarga peso del trabajo).',
+      'Si pendiente >12% causa dolor rodilla → bajar a 8-10%.'
+    ]
+  },
+  'leg_press_45': {
+    title: 'Prensa 45° Hammer',
+    setup: [
+      'Pies <b>altos y anchos</b> en plataforma (favorece glúteo, descarga rodilla).',
+      'Puntas de pies ligeramente hacia afuera (rotación externa → activa VMO).',
+      'Espalda baja pegada al respaldo. Caderas no se despegan.'
+    ],
+    cfg: [
+      'ROM parcial: bajar hasta <b>90° rodilla MÁX</b> (muslo paralelo a plataforma).',
+      'Empuja con talón, no con punta.',
+      'Excéntrica controlada 2-3s. No rebotes.'
+    ],
+    pfps: [
+      'NUNCA pasar 90° flexión bajo carga.',
+      'Si rodillas se van hacia adentro → bajar peso, empujar afuera.',
+      'Dolor rotuliano en empuje → revisar pies más altos.'
+    ]
+  },
+  'leg_ext': {
+    title: 'Extensión cuádriceps',
+    setup: [
+      'Espalda pegada al respaldo, cadera 90°.',
+      'Almohadilla tobillo justo encima del empeine.',
+      'Ajustar tope para hacer <b>solo arco corto últimos 30°</b> (de 30° hasta extensión completa).'
+    ],
+    cfg: [
+      'Carga baja (20kg start). Reps 15.',
+      'Subir 1-2s, pausa arriba 1s (contracción VMO), bajar 2s.',
+      'NO bajar más de 30° flexión — daña rótula.'
+    ],
+    pfps: [
+      'Si no hay tope mecánico → hacer ROM mental: solo último tercio del recorrido.',
+      'Dolor en flexión profunda = ejercicio mal hecho — acortar arco.',
+      'Si dolor en arco corto → OMITIR este día.'
+    ]
+  },
+  'prone_leg_curl': {
+    title: 'Prone Leg Curl (boca abajo)',
+    setup: [
+      'Acostado boca abajo, caderas pegadas al banco.',
+      'Almohadilla tobillo justo encima del talón.',
+      'Agarrar manijas para estabilidad.'
+    ],
+    cfg: [
+      'Llevar talones hacia glúteo, apretar isquio arriba 1s.',
+      'Bajar controlado 2-3s (excéntrica clave).',
+      'Sin levantar caderas — si suben → bajar peso.'
+    ],
+    pfps: [
+      'Crítico para balance H:Q (isquio:cuádriceps) y protección rotuliana.',
+      'No es PFPS-sensible — puedes empujar carga.'
+    ]
+  },
+  'pantorrilla_sentado': {
+    title: 'Pantorrilla sentado (sóleo)',
+    setup: [
+      'Rodillas a 90°, almohadilla sobre los muslos cerca de rodillas.',
+      'Antepié en plataforma, talón colgando.',
+      'Quitar pasador de seguridad.'
+    ],
+    cfg: [
+      'Bajar talones máximo (estiramiento sóleo) 2s.',
+      'Subir empujando con antepié 1s, pausa arriba 1s.',
+      '15 reps, 4-5 sets. Crítico descenso montaña.'
+    ],
+    pfps: [
+      'Sin estrés rotuliano — seguro.',
+      'Si calambres → bajar peso, no reps.'
+    ]
+  },
+  'crossover': {
+    title: 'Polea cruzada (abducción / kickback)',
+    setup: [
+      'Cable en polea <b>baja</b>.',
+      'Tobillera en pie alejado del aparato.',
+      'Mano agarra columna para estabilidad. Core firme.'
+    ],
+    cfg: [
+      '<b>Abducción cadera:</b> pierna estirada hacia afuera (lateral). 15 reps.',
+      '<b>Kickback glúteo:</b> pierna estirada hacia atrás, apretando glúteo.',
+      'Movimiento desde cadera, NO tronco — no balancear.',
+      'Carga 10kg suficiente (músculo pequeño + estabilizador).'
+    ],
+    pfps: [
+      'Prioridad PFPS: abducción activa glúteo medio → alinea rodilla.',
+      'Sin estrés rotuliano.'
+    ]
+  },
+  '_wall_sit': {
+    title: 'Sentadilla a pared (isométrica)',
+    setup: [
+      'Espalda pegada a pared.',
+      'Pies separados ancho hombros, ~50cm de la pared.',
+      'Bajar hasta <b>rodillas 60-90°</b> (NO más).',
+      'Rodillas alineadas sobre tobillos (no más adelante).'
+    ],
+    cfg: [
+      'Aguantar tiempo prescrito (20s adapt → 45s fuerza).',
+      'Respirar normal, no aguantar aire.',
+      'Manos a los lados o cruzadas al pecho.'
+    ],
+    pfps: [
+      'Isométrico = oro para PFPS (sin movimiento articular).',
+      'Si dolor → subir más alto (menos flexión, ~70° en vez de 90°).',
+      'Sentir trabajo en cuádriceps frontal, no en rodilla.'
+    ]
+  },
+  'banco_plano': {
+    title: 'Press de banca',
+    setup: [
+      'Ojos debajo de la barra al acostarse.',
+      'Pies firmes en piso, glúteo apoyado, omóplatos retraídos.',
+      'Agarre ancho ~1.5× ancho hombros.'
+    ],
+    cfg: [
+      'Bajar barra controlado 2s hasta tocar pecho (línea pezones).',
+      'Empuje explosivo, sin rebote, codos ~45° del torso.',
+      'Spotter o seguros si vas pesado (sem 3+ a 5×5 @ 40kg).'
+    ],
+    pfps: [
+      'No afecta rodilla.'
+    ]
+  },
+  'jack_squat': {
+    title: 'Jack Squat',
+    setup: [
+      'Hombros bajo almohadillas.',
+      'Pies en plataforma <b>altos y anchos</b>.',
+      'Quitar pasadores.'
+    ],
+    cfg: [
+      'ROM parcial: <b>NO pasar 90° rodilla</b>.',
+      'Bajar 3s controlado, subir 1s.',
+      'Rodillas siguen línea de los pies.'
+    ],
+    pfps: [
+      'Más glúteo que prensa (mejor para PFPS).',
+      'Si dolor → reemplazar por prensa con menos rom.'
+    ]
+  },
+  'mancuernas': {
+    title: 'Step-up con mancuernas',
+    setup: [
+      'Banco bajo (~30 cm). NO usar banco alto.',
+      'Mancuerna en cada mano, brazos al lado.',
+      'Pie completo en banco (no medio pie).'
+    ],
+    cfg: [
+      'Subir empujando con <b>pie de arriba</b> (no impulso del de abajo).',
+      'Bajar controlado mismo pie, 2-3s.',
+      'Completar todas las reps de una pierna, luego cambiar.',
+      'Trekking-specific: simula subir piedra/escalón.'
+    ],
+    pfps: [
+      'Banco máx 30cm — más alto = flexión >90°.',
+      'Si rodilla cae adentro → empujar afuera, bajar peso.',
+      'Si dolor → reemplazar por step-up más bajo o quitar mancuernas.'
+    ]
+  },
+  'press_hombros_107': {
+    title: 'Press de hombros',
+    setup: [
+      'Respaldo vertical 90°.',
+      'Asiento ajustado: agarre a la altura de los hombros.',
+      'Codos ~45° del torso al empujar.'
+    ],
+    cfg: [
+      'Empuje arriba sin bloquear codos.',
+      'Bajar 2s controlado hasta hombros.'
+    ],
+    pfps: ['No afecta rodilla.']
+  },
+  'remo_isolateral': {
+    title: 'Remo Iso-Lateral',
+    setup: [
+      'Pecho apoyado en almohadilla.',
+      'Agarre neutro o pronado según manijas.',
+      'Asiento ajustado: manijas a la altura del pecho bajo.'
+    ],
+    cfg: [
+      'Tirar hacia caderas, apretar escápula 1s.',
+      'Excéntrica 2s. No usar momentum.'
+    ],
+    pfps: ['No afecta rodilla.']
+  },
+  'pulldown': {
+    title: 'Pulldown (polea alta)',
+    setup: [
+      'Rodillas bajo almohadilla (ajustada para que no te eleve).',
+      'Agarre ancho pronado.',
+      'Torso ligeramente inclinado atrás (~15°).'
+    ],
+    cfg: [
+      'Bajar barra al esternón apretando dorsal.',
+      'Subir controlado 2-3s, no soltar.'
+    ],
+    pfps: ['No afecta rodilla.']
+  },
+  'hiper_inversa': {
+    title: 'Hiperextensión inversa',
+    setup: [
+      'Caderas en el borde del banco.',
+      'Tronco apoyado, agarrarse al frente.',
+      'Piernas estiradas.'
+    ],
+    cfg: [
+      'Elevar piernas activando glúteos + lumbar.',
+      'No hiper-extender lumbar — paralelo al piso es suficiente.',
+      'Excéntrica controlada 2s.'
+    ],
+    pfps: ['Sin estrés rotuliano. Cadena posterior trekking-specific.']
+  },
+  'camber_curl': {
+    title: 'Curl bíceps Camber',
+    setup: [
+      'Almohadilla soporta tríceps.',
+      'Asiento ajustado: codos en línea con eje de la máquina.'
+    ],
+    cfg: [
+      'Subir 1s, apretar bíceps arriba 1s, bajar 2s.',
+      'Sin balanceo de espalda.'
+    ],
+    pfps: ['No afecta rodilla.']
+  },
+  'adductor_abductor': {
+    title: 'Abductor (foco VMO)',
+    setup: [
+      'Seleccionar modo <b>ABDUCCIÓN</b> (afuera) en la máquina.',
+      'Almohadillas en cara externa de los muslos.'
+    ],
+    cfg: [
+      'Abrir piernas controlado, apretar glúteo medio.',
+      'Cerrar 2s lento (excéntrica).',
+      '15 reps, 4 sets.'
+    ],
+    pfps: ['Prioridad PFPS — fortalece estabilizadores de rodilla.']
+  }
+};
+function openHowto(id){
+  const h = HOWTO[id];
+  if(!h) return;
+  const sec = (title, items, color) => items && items.length
+    ? `<div style="margin-top:10px;"><div style="color:${color};font-weight:600;font-size:13px;margin-bottom:4px;">${title}</div><ul style="margin:0;padding-left:18px;font-size:13px;line-height:1.55;">${items.map(i=>`<li>${i}</li>`).join('')}</ul></div>`
+    : '';
+  openModal(`<h2 style="font-size:18px;">${h.title}</h2>
+    ${sec('⚙ Setup / Panel', h.setup, 'var(--accent)')}
+    ${sec('🎯 Configuración', h.cfg, 'var(--accent2)')}
+    ${sec('🦵 Reglas PFPS', h.pfps, '#ff6b6b')}
+    <button class="btn primary" style="margin-top:14px;width:100%;" onclick="closeModal()">Entendido</button>`);
+}
+window.openHowto = openHowto;
+
 /* ============= IMG HELPERS ============= */
 const IMGS = window.CAT_IMGS || {};
 function imgFor(id){ return IMGS[id] || ''; }
@@ -991,7 +1286,10 @@ function renderRutinaInner(ns, td){
     const headerCells = timeOnly
       ? `<div class="n">#</div><div class="set-lbl">Tiempo</div><div class="set-lbl">✓</div>`
       : `<div class="n">#</div><div class="set-lbl">${ex.isCardio?'Tiempo':'Reps'}</div><div class="set-lbl">${wHeader}</div><div class="set-lbl">✓</div>`;
+    const hasHowto = !!HOWTO[ex.id];
+    const howtoBtn = hasHowto ? `<button class="btn small" data-act="howto" data-id="${ex.id}" style="flex:0 0 auto;">ℹ Cómo usar</button>` : '';
     div.innerHTML = `<div class="row-with-thumb">${thumb(ex.id,'md')}<div class="grow"><h3>${ex.name}</h3>${restChip}</div></div>
+      ${howtoBtn ? `<div style="margin:6px 0 4px;">${howtoBtn}</div>` : ''}
       ${ex.note ? `<div class="pfps-warn">${ex.note}</div>` : ''}
       <div class="set-row set-header${timeOnly?' time-only':''}">${headerCells}</div>
       <div id="sets-${idx}"></div>
@@ -1014,6 +1312,7 @@ function renderRutinaInner(ns, td){
         saveDB(); renderSets(i); updateProgress();
       } else if(b.dataset.act === 'rest-serie'){ startTimer(+b.dataset.r, 'serie'); }
       else if(b.dataset.act === 'rest-ex'){ startTimer(+b.dataset.r, 'ejercicio'); }
+      else if(b.dataset.act === 'howto'){ openHowto(b.dataset.id); }
     });
   });
 
