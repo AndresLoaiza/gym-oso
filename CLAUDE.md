@@ -32,7 +32,6 @@ App web móvil PWA de entrenamiento para **Andrés "El Oso" Loaiza** (Medellín)
 - `manifest.json` + `sw.js` → PWA instalable + offline cache
 - `catalogo-imgs.js` → 25 thumbnails base64 (229 KB)
 - `Chart.js@4.4.1` vía CDN para gráficas
-- Anthropic API (`claude-sonnet-4-20250514`) opcional — solo para regenerar plan con IA. API key se guarda en localStorage del navegador.
 - Persistencia: `localStorage` clave **`elosoGymV2`**
 - Fuentes: Google Fonts (Bebas Neue, DM Sans, DM Mono)
 - Theme: dark + acento lila violeta `#c4a7ff`, acento2 naranja `#ff6b35`
@@ -54,10 +53,9 @@ App web móvil PWA de entrenamiento para **Andrés "El Oso" Loaiza** (Medellín)
                  "tests": { "leg_press_45":{w,r}, "banco_plano":{w,r}, "pulldown":{w,r} },
                  "date":"..."
                } },
-  "apiKey": "sk-ant-…",
   "plan": { "start":"YYYY-MM-DD",
             "weeks":[[{focus,notes,exercises:[{id,name,sets,reps,weight,rest,isCardio,noWeight,note}]}, ...]],
-            "generatedBy":"local|ai" },
+            "generatedBy":"local" },
   "sessions": [
     { "date":"ISO", "exercises":[...], "planRef":{w:0,d:0}, "kneeStatus":"bien|leve|dolor" }
   ],
@@ -111,7 +109,8 @@ App web móvil PWA de entrenamiento para **Andrés "El Oso" Loaiza** (Medellín)
 - Cada ejercicio incluye `rest` (segundos) específico
 - Strip semanas con contador `N/3` por semana, ✓ si completa
 - Día completado se muestra con opacidad reducida
-- Action bars: "♻ Regenerar plan (sin IA)" + "🤖 Regenerar plan con IA"
+- Plan se genera al terminar onboarding y se auto-regenera al completar las 8 semanas (próxima sesión inicia nuevo ciclo con misma periodización)
+- Sin botones de regeneración manual (plan deriva siempre de baseline + ciencia)
 
 ### 💪 Hoy (rutina)
 - **Check-in rodilla pre-sesión** (modal, 3 opciones):
@@ -145,11 +144,11 @@ App web móvil PWA de entrenamiento para **Andrés "El Oso" Loaiza** (Medellín)
 - Borrar sesión individual / historial completo
 
 ### ⚙️ Config
-- API key Anthropic (input password)
 - Perfil editable + **3 baselines visibles** (Prensa, Banca, Pulldown con sus 1RM + peso×reps usados)
 - Wake lock toggle (pantalla no se apaga durante sesión)
 - **Backup / Restore JSON** — exportar todo a archivo, importar desde archivo (sobrevive borrado de app, cambio de celular)
-- Reiniciar onboarding
+- Reiniciar onboarding (re-genera plan con baselines actualizados)
+- _Sin API key ni integraciones externas — app 100% local_
 
 -----
 

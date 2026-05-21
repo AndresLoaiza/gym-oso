@@ -299,13 +299,6 @@
   <section class="screen" id="screen-config">
     <div class="section-title">Configuración</div>
     <div class="card">
-      <h3>API key Anthropic</h3>
-      <div class="small">Necesaria para escanear máquinas con cámara y regenerar plan con IA.</div>
-      <input class="input" id="cfg-key" type="password" placeholder="sk-ant-…" style="margin-top:8px">
-      <button class="btn primary" id="save-key" style="margin-top:8px">Guardar</button>
-      <div class="small" style="margin-top:6px; color: var(--warn)">⚠️ Tu key se guarda en localStorage del navegador (solo este iPhone). No la compartas.</div>
-    </div>
-    <div class="card">
       <h3>Perfil</h3>
       <div id="cfg-profile"></div>
       <button class="btn" id="edit-profile" style="margin-top:8px">Editar perfil / fecha trekking</button>
@@ -340,10 +333,6 @@
 </div>
 <div class="action-bar" id="bar-rutina" style="display:none">
   <button class="btn primary" id="finish-session">✓ Finalizar sesión</button>
-</div>
-<div class="action-bar" id="bar-plan" style="display:none">
-  <button class="btn" id="regen-local">♻ Regenerar plan (sin IA)</button>
-  <button class="btn warn" id="regen-plan">🤖 Regenerar plan con IA</button>
 </div>
 
 <!-- Image lightbox -->
@@ -397,7 +386,6 @@ const CATALOGO = [
 const STORE_KEY = 'elosoGymV2';
 const DEFAULT_DB = {
   profile: null, // {weight, height, age, knee, trekDate, baseline}
-  apiKey: '',
   plan: null,    // {start, weeks: [[{focus, exercises:[...]}, ...]]}
   sessions: [],
   sessionSets: {},
@@ -490,7 +478,7 @@ function renderOnbStep(){
      <p>Entrenamiento personal para preparación de trekking nivel 4 — adaptado a tu síndrome patelofemoral.</p>
      <h2>¿Qué hace esta app?</h2>
      <ul style="font-size:14px;color:var(--muted);margin:0 0 16px 20px;line-height:1.6;">
-       <li>Genera un plan de 8 semanas con IA respetando tu rodilla</li>
+       <li>Genera un plan de 8 semanas evidence-based (ACSM 2026 + PFPS) respetando tu rodilla</li>
        <li>Te guía sesión a sesión: series, reps, peso óptimo</li>
        <li>Catálogo de las 25 máquinas de tu gym pre-cargadas</li>
        <li>Progreso visual + ajuste automático de cargas</li>
@@ -742,66 +730,6 @@ function generateLocalPlan(){
   saveDB();
 }
 
-/* ============= PLAN CON IA (regenerar) ============= */
-async function regenerateWithAI(){
-  if(!DB.apiKey){
-    alert('Primero guarda tu API key en Config.');
-    show('config');
-    return;
-  }
-  const btn = $('#regen-plan');
-  btn.disabled = true; btn.innerHTML = '<span class="loading"></span> Generando con Claude…';
-  try {
-    const sys = `Eres un entrenador con especialidad en fisioterapia deportiva. Diseñas un plan de 8 semanas para Andrés Loaiza:
-- Objetivo: estar listo para trekking nivel 4 (sin fecha fija — preparación continua hasta sentirse preparado)
-- Edad ${DB.profile.age}, peso ${DB.profile.weight}kg, estatura ${DB.profile.height}cm
-- DIAGNÓSTICO CLÍNICO: Síndrome de dolor patelofemoral (condromalacia rotuliana leve). Reglas obligatorias:
-  * NO flexión rodilla bajo carga >30°
-  * Priorizar vasto medial oblicuo (abducción cadera con rotación externa)
-  * Leg Extension solo arco corto (últimos 30°)
-  * NO plyometrics, NO box jumps, NO lunges profundos
-  * Cardio: StairMaster progresivo, caminata inclinada, bici. NO trotar.
-- 1RM Prensa 45°: ${DB.profile.baseline.legPress1RM}kg
-- 1RM Press banca: ${DB.profile.baseline.benchPress1RM || 'n/a'}kg
-- 1RM Pulldown: ${DB.profile.baseline.pulldown1RM || 'n/a'}kg
-- 3 días/semana
-- Periodización: Sem 1-2 adaptación, 3-5 fuerza, 6-7 resistencia trekking, 8 taper.
-
-Máquinas disponibles (catálogo del gym): ${CATALOGO.filter(c=>!c.uncertain).map(c => c.id+'='+c.name).join('; ')}
-
-DEVUELVE SOLO JSON VÁLIDO sin backticks ni texto. Estructura exacta:
-{"weeks":[ [ {"focus":"...","notes":"...","exercises":[{"id":"leg_press_45","name":"...","sets":3,"reps":12,"weight":40,"note":"..."}, ...]}, ... ], ... ]}
-8 elementos en weeks. Cada semana 3 días. Cada ejercicio con id del catálogo, sets numero, reps numero o string como "30s", weight kg numero, note opcional.`;
-
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        'x-api-key': DB.apiKey,
-        'anthropic-version': '2023-06-01',
-        'anthropic-dangerous-direct-browser-access': 'true'
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 4096,
-        system: sys,
-        messages: [{role:'user', content:'Genera mi plan ahora. Solo JSON.'}]
-      })
-    });
-    const j = await res.json();
-    if(j.error) throw new Error(j.error.message);
-    const text = j.content[0].text.trim().replace(/^```json/,'').replace(/```$/,'').trim();
-    const plan = JSON.parse(text);
-    DB.plan = { start: todayISO(), weeks: plan.weeks, generatedBy: 'ai' };
-    saveDB();
-    renderPlan(); renderHome();
-    alert('Plan regenerado con IA ✓');
-  } catch(e){
-    alert('Error: ' + e.message);
-  } finally {
-    btn.disabled = false; btn.textContent = 'Regenerar plan con IA';
-  }
-}
 
 /* ============= NAV ============= */
 function show(tab){
@@ -830,7 +758,7 @@ function renderHome(){
     t.innerHTML = `<div class="muscle">Semana ${ns.weekIdx+1} · Día ${ns.dayIdx+1} · ${td.focus}</div>
       <div style="font-size:13px; margin-top:6px;">${td.exercises.length} ejercicios · ${td.notes || ''}</div>`;
   } else {
-    t.innerHTML = `<div class="small">Plan de 8 semanas completado 🎉. Regenera desde Plan.</div>`;
+    t.innerHTML = `<div class="small">Plan de 8 semanas completado 🎉. Inicia siguiente sesión para empezar nuevo ciclo.</div>`;
   }
   const stats = $('#home-stats');
   const totalSesiones = DB.sessions.length;
@@ -868,6 +796,12 @@ function nextSession(){
       if(!done.has(`${w}-${d}`)) return { weekIdx: w, dayIdx: d, session: DB.plan.weeks[w][d] };
     }
   }
+  // Plan completo → auto-regenerar nuevo ciclo basado en baseline + ciencia
+  if(DB.profile?.baseline){
+    DB.sessionSets = {}; DB._currentRef = null; DB._kneeStatus = null; DB._adaptedSession = null;
+    generateLocalPlan();
+    return { weekIdx: 0, dayIdx: 0, session: DB.plan.weeks[0][0] };
+  }
   return null;
 }
 function todaysSession(){ return nextSession()?.session || null; }
@@ -882,9 +816,9 @@ function renderPlan(){
   const total = DB.plan.weeks.reduce((a,wk) => a + wk.length, 0);
   const summary = ns
     ? `<h3>Próximo: Sem ${ns.weekIdx+1} · Día ${ns.dayIdx+1}</h3>
-       <div class="small">Plan ${DB.plan.generatedBy === 'ai' ? '🤖 IA' : '⚙️ Predeterminado'} · ${sessionsDone}/${total} sesiones hechas</div>
+       <div class="small">Plan evidence-based · ${sessionsDone}/${total} sesiones hechas</div>
        <div class="small" style="margin-top:6px;">Cada día avanza al finalizar la sesión actual. Independiente del calendario.</div>`
-    : `<h3>🎉 Plan completado</h3><div class="small">${sessionsDone}/${total} sesiones. Regenera para empezar otro ciclo.</div>`;
+    : `<h3>🎉 Plan completado</h3><div class="small">${sessionsDone}/${total} sesiones. Próxima sesión iniciará un ciclo nuevo automáticamente (baseline + periodización).</div>`;
   $('#plan-summary').innerHTML = summary;
 
   const doneByWeek = {};
@@ -922,31 +856,6 @@ function showWeek(i){
     </div>`).join('');
   $('#plan-detail').innerHTML = html;
 }
-$('#regen-plan').addEventListener('click', regenerateWithAI);
-$('#regen-local').addEventListener('click', () => {
-  openModal(`
-    <h2>Regenerar plan (sin IA)</h2>
-    <p>Se reinicia desde semana 1 con prescripciones actualizadas (ACSM 2026 + PFPS). Tu historial NO se borra.</p>
-    <div class="btn-row" style="margin-top:14px;">
-      <button class="btn" id="rg-cancel">Cancelar</button>
-      <button class="btn primary" id="rg-go">Regenerar</button>
-    </div>
-  `);
-  $('#rg-cancel').addEventListener('click', closeModal);
-  $('#rg-go').addEventListener('click', () => {
-    try {
-      DB.sessionSets = {}; DB._currentRef = null; DB._kneeStatus = null; DB._adaptedSession = null;
-      generateLocalPlan();
-      closeModal();
-      renderPlan();
-      openModal(`<h2>✓ Plan regenerado</h2><p>Volumen y pesos derivados de tu baseline (ACSM 2026 + PFPS).</p><div class="btn-row"><button class="btn primary" onclick="closeModal()">OK</button></div>`);
-    } catch(err) {
-      closeModal();
-      openModal(`<h2>Error</h2><pre style="white-space:pre-wrap;font-size:11px;">${err.message}\n${err.stack||''}</pre><div class="btn-row"><button class="btn" onclick="closeModal()">OK</button></div>`);
-    }
-  });
-});
-
 /* ============= RUTINA HOY ============= */
 function askKneeCheckin(onDone){
   openModal(`
@@ -1000,7 +909,7 @@ function adaptSessionForKnee(td, status){
 function renderRutina(){
   const ns = nextSession();
   if(!ns){
-    $('#rutina-list').innerHTML = '<div class="card"><div class="small">🎉 Plan completado. Regenera desde Plan para empezar nuevo ciclo.</div></div>';
+    $('#rutina-list').innerHTML = '<div class="card"><div class="small">🎉 Plan completado. Próxima sesión iniciará un nuevo ciclo automáticamente.</div></div>';
     $('#rutina-title').textContent = 'Completado';
     return;
   }
@@ -1315,7 +1224,6 @@ $('#clear-hist').addEventListener('click', () => {
 
 /* ============= CONFIG ============= */
 function renderConfig(){
-  $('#cfg-key').value = DB.apiKey || '';
   $('#cfg-wake').checked = !!DB.settings.wake;
   const p = DB.profile || {};
   const b = p.baseline || {};
@@ -1332,11 +1240,6 @@ function renderConfig(){
   const le = $('#last-export');
   if(le) le.textContent = DB.lastExport ? new Date(DB.lastExport).toLocaleString('es') : 'nunca';
 }
-$('#save-key').addEventListener('click', () => {
-  DB.apiKey = $('#cfg-key').value.trim();
-  saveDB();
-  alert('Guardado ✓');
-});
 $('#cfg-wake').addEventListener('change', e => {
   DB.settings.wake = e.target.checked;
   saveDB();
