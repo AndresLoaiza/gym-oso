@@ -400,6 +400,21 @@ function loadDB(){
 }
 function saveDB(){ localStorage.setItem(STORE_KEY, JSON.stringify(DB)); }
 
+/* Migración v2: recalcula 1RM con fórmula híbrida (Epley≤10 / Mayhew>10).
+   Tests guardados con >10 reps tenían Epley inflado → derivaba cargas excesivas. */
+function migrateBaselineFormula(){
+  const b = DB.profile?.baseline;
+  if(!b || !b.tests || b.formulaVersion === 2) return;
+  const t = b.tests;
+  if(!t.leg_press_45 || !t.banco_plano || !t.pulldown) return;
+  b.legPress1RM   = epley1RM(t.leg_press_45.w, t.leg_press_45.r);
+  b.benchPress1RM = epley1RM(t.banco_plano.w,  t.banco_plano.r);
+  b.pulldown1RM   = epley1RM(t.pulldown.w,     t.pulldown.r);
+  b.formulaVersion = 2;
+  saveDB();
+  if(typeof generateLocalPlan === 'function') generateLocalPlan();
+}
+
 /* ============= GLOSARIO ============= */
 const GLOSARIO = {
   'RIR': { full:'Reps In Reserve (Reps en reserva)', def:'Cuántas repeticiones más podrías hacer antes de llegar al fallo. RIR 2 = paras cuando aún te quedan 2 reps en el tanque. Sirve para regular intensidad sin medir 1RM cada vez. Para principiante con PFPS: trabajar siempre en RIR 2-3.' },
@@ -443,7 +458,16 @@ function openImg(id){
 document.addEventListener('click', e => { if(e.target.id === 'img-modal') $('#img-modal').classList.remove('active'); });
 
 /* ============= UTIL ============= */
-function epley1RM(weight, reps){ return Math.round(weight * (1 + reps/30)); }
+/* 1RM híbrido: Epley válido ≤10 reps; >10 reps Epley sobreestima >15%.
+   Para r>10 usamos Mayhew (J Strength Cond Res 1992) — validado hasta ~25 reps.
+   Mayhew: 1RM = (100·w) / (52.2 + 41.9·e^(-0.055·r))
+   Cap r=30 para tests de endurance extremos (evita división casi-cero). */
+function epley1RM(weight, reps){
+  const r = Math.min(Math.max(+reps||0, 1), 30);
+  const w = +weight || 0;
+  if(r <= 10) return Math.round(w * (1 + r/30));
+  return Math.round((100 * w) / (52.2 + 41.9 * Math.exp(-0.055 * r)));
+}
 function workWeight(oneRM, pct){ return Math.round(oneRM * pct / 2.5) * 2.5; }
 function todayISO(){ return new Date().toISOString().slice(0,10); }
 function fmtDate(iso){ const d = new Date(iso); return d.toLocaleDateString('es', {day:'2-digit', month:'short'}); }
@@ -1302,6 +1326,7 @@ document.addEventListener('visibilitychange', () => { if(document.visibilityStat
 /* ============= BOOT ============= */
 function showApp(){ $('#onboarding').style.display='none'; $('#ob-actions').style.display='none'; $('#app').style.display=''; show('home'); }
 
+migrateBaselineFormula();
 if(!DB.profile){ showOnboarding(); }
 else { showApp(); }
 
