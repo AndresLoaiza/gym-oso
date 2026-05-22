@@ -311,6 +311,17 @@
       </label>
     </div>
     <div class="card">
+      <h3>Auto-progresión</h3>
+      <label style="display:flex; gap:10px; align-items:center;">
+        <input type="checkbox" id="cfg-autoprog" style="width:20px; height:20px;">
+        <span style="font-size:13px;">Ajustar pesos del plan automáticamente al finalizar sesión</span>
+      </label>
+      <div class="small" style="color:var(--muted);margin-top:8px;">
+        Si completas todas las series con reps target → <b>+2.5kg</b> compuestos / <b>+1.25kg</b> aislamiento.
+        Si fallas reps en ≥2 series → -bump. Modal post-sesión muestra cambios + opción deshacer.
+      </div>
+    </div>
+    <div class="card">
       <h3>Backup / Restore</h3>
       <div class="small">Exporta toda tu data (perfil, plan, historial) a un archivo JSON. Guárdalo en iCloud Drive / Google Drive. Si borras la app o cambias de celular, impórtalo y vuelves justo donde estabas.</div>
       <div class="btn-row" style="margin-top:10px">
@@ -389,7 +400,7 @@ const DEFAULT_DB = {
   plan: null,    // {start, weeks: [[{focus, exercises:[...]}, ...]]}
   sessions: [],
   sessionSets: {},
-  settings: { wake: false }
+  settings: { wake: false, autoProgress: true }
 };
 let DB = loadDB();
 let wakeLock = null;
@@ -766,6 +777,90 @@ function epley1RM(weight, reps){
   return Math.round((100 * w) / (52.2 + 41.9 * Math.exp(-0.055 * r)));
 }
 function workWeight(oneRM, pct){ return Math.round(oneRM * pct / 2.5) * 2.5; }
+
+/* ============= AUTO-PROGRESIÓN =============
+   Aplicada al finalizar sesión. Compara reps reales vs target del plan.
+   Reglas (NSCA + PFPS):
+   - Compuestos: ±2.5kg. Aislamiento: ±1.25kg.
+   - Todas series ≥ reps target + kneeStatus=bien → +bump.
+   - Cualquier serie reps < target → mantiene.
+   - Si reps < target en ≥2 series → -bump.
+   - kneeStatus=leve → mantiene (no progresar con molestia).
+   - kneeStatus=dolor → -bump en cuádriceps, mantiene resto.
+   - Cardio / noWeight / time-based → skip.
+   - Aplica a TODAS las ocurrencias futuras del mismo (día, ex.id). */
+const PROG_CAPS = {
+  // PFPS: limita techo aislamiento rodilla
+  leg_ext: { max: 17.5, isolation: true },
+  crossover: { max: 12, isolation: true },     // VMO endurance, no carga
+  adductor_abductor: { max: 22.5, isolation: true },
+  camber_curl: { max: 22.5, isolation: true },
+  prone_leg_curl: { isolation: true },
+  hiper_inversa: { isolation: true },
+  mancuernas: { max: 15, isolation: true },    // step-up trekking
+  pantorrilla_sentado: {},                      // compuesto sóleo
+  leg_press_45: { quadHeavy: true },
+  jack_squat: { quadHeavy: true },
+  banco_plano: {},
+  remo_isolateral: {},
+  press_hombros_107: {},
+  pulldown: {},
+};
+
+function decideBump(ex, knee, targetReps){
+  if(ex.isCardio || ex.noWeight) return 0;
+  if(knee === 'leve') return 0;
+  if(typeof targetReps !== 'number') return 0;  // time-based
+  const cap = PROG_CAPS[ex.id] || {};
+  const step = cap.isolation ? 1.25 : 2.5;
+  const done = ex.sets.filter(s => s.done);
+  if(done.length === 0) return 0;
+  const shortfalls = done.filter(s => (+s.reps || 0) < targetReps).length;
+  const allComplete = done.length === ex.sets.length && shortfalls === 0;
+  if(knee === 'dolor' && cap.quadHeavy) return -step;
+  if(allComplete && knee === 'bien') return +step;
+  if(shortfalls >= 2) return -step;
+  return 0;
+}
+
+function applyProgression(session){
+  const ref = session.planRef;
+  if(!ref || !DB.plan?.weeks) return [];
+  const { w, d } = ref;
+  const knee = session.kneeStatus || 'bien';
+  const planDay = DB.plan.weeks[w]?.[d];
+  if(!planDay) return [];
+  const changes = [];
+  for(const ex of session.exercises){
+    const planEx = planDay.exercises.find(e => e.id === ex.id);
+    const targetReps = planEx && typeof planEx.reps === 'number' ? planEx.reps : null;
+    const bump = decideBump(ex, knee, targetReps);
+    if(bump === 0) continue;
+    const cap = PROG_CAPS[ex.id] || {};
+    let applied = false;
+    let beforeW = null, afterW = null;
+    for(let wi = w + 1; wi < DB.plan.weeks.length; wi++){
+      const day = DB.plan.weeks[wi]?.[d];
+      if(!day) continue;
+      const target = day.exercises.find(e => e.id === ex.id);
+      if(!target || target.isCardio || target.noWeight) continue;
+      const oldW = +target.weight || 0;
+      const newW = Math.max(2.5, Math.min(cap.max ?? Infinity, oldW + bump));
+      if(newW === oldW) continue;
+      target.weight = newW;
+      if(!applied){ beforeW = oldW; afterW = newW; applied = true; }
+    }
+    if(applied) changes.push({ id: ex.id, name: ex.name, from: beforeW, to: afterW, bump });
+  }
+  if(changes.length) saveDB();
+  return changes;
+}
+
+function undoProgression(snapshot){
+  DB.plan = JSON.parse(snapshot);
+  saveDB();
+}
+
 function todayISO(){ return new Date().toISOString().slice(0,10); }
 function fmtDate(iso){ const d = new Date(iso); return d.toLocaleDateString('es', {day:'2-digit', month:'short'}); }
 function daysBetween(a,b){ return Math.round((new Date(b)-new Date(a))/86400000); }
@@ -1433,21 +1528,60 @@ $('#finish-session').addEventListener('click', () => {
   if(exercises.length === 0) return;
   const hasDone = exercises.some(e => e.sets.some(s => s.done));
   if(!hasDone) { if(!confirm('No marcaste series completadas. ¿Finalizar igual?')) return; }
-  DB.sessions.push({
+  const session = {
     date: new Date().toISOString(),
     exercises,
     planRef: DB._currentRef || null,
     kneeStatus: DB._kneeStatus || 'bien'
-  });
+  };
+  DB.sessions.push(session);
   DB.sessionSets = {};
   DB._currentRef = null;
   DB._kneeStatus = null;
   DB._adaptedSession = null;
   saveDB();
   releaseWake();
+  // Auto-progresión: opcional, on por default
+  if(DB.settings?.autoProgress !== false){
+    const planSnapshot = JSON.stringify(DB.plan);
+    const changes = applyProgression(session);
+    if(changes.length){
+      showProgressionModal(changes, planSnapshot);
+      return;
+    }
+  }
   alert('Sesión guardada ✓');
   show('home');
 });
+
+let _progSnapshot = null;
+function showProgressionModal(changes, snapshot){
+  _progSnapshot = snapshot;
+  const rows = changes.map(c => {
+    const arrow = c.bump > 0 ? '↑' : '↓';
+    const color = c.bump > 0 ? '#7be495' : 'var(--warn)';
+    return `<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--surface2);font-size:13px;">
+      <span>${c.name}</span>
+      <span style="color:${color};font-family:'DM Mono',monospace;">${c.from}→${c.to}kg ${arrow}</span>
+    </div>`;
+  }).join('');
+  openModal(`
+    <h2 style="font-size:18px;">Progresión aplicada ✓</h2>
+    <div class="small" style="color:var(--muted);margin-bottom:10px;">
+      Cambios aplicados al plan desde la próxima ocurrencia de cada ejercicio.
+    </div>
+    <div>${rows}</div>
+    <div class="btn-row" style="margin-top:14px;gap:8px;">
+      <button class="btn primary" id="prog-accept" style="flex:1;">Aceptar</button>
+      <button class="btn" id="prog-undo">↶ Deshacer</button>
+    </div>
+  `);
+  $('#prog-accept').addEventListener('click', () => { _progSnapshot = null; closeModal(); show('home'); });
+  $('#prog-undo').addEventListener('click', () => {
+    if(_progSnapshot){ undoProgression(_progSnapshot); _progSnapshot = null; }
+    closeModal(); show('home');
+  });
+}
 
 /* ============= TIMER ============= */
 let timerInt = null;
@@ -1576,6 +1710,7 @@ $('#clear-hist').addEventListener('click', () => {
 /* ============= CONFIG ============= */
 function renderConfig(){
   $('#cfg-wake').checked = !!DB.settings.wake;
+  $('#cfg-autoprog').checked = DB.settings.autoProgress !== false;
   const p = DB.profile || {};
   const b = p.baseline || {};
   const tests = b.tests || {};
@@ -1595,6 +1730,10 @@ $('#cfg-wake').addEventListener('change', e => {
   DB.settings.wake = e.target.checked;
   saveDB();
   if(e.target.checked) requestWake(); else releaseWake();
+});
+$('#cfg-autoprog').addEventListener('change', e => {
+  DB.settings.autoProgress = e.target.checked;
+  saveDB();
 });
 $('#edit-profile').addEventListener('click', () => {
   obStep = 1; showOnboarding();

@@ -153,6 +153,7 @@ App web móvil PWA de entrenamiento para **Andrés "El Oso" Loaiza** (Medellín)
 ### ⚙️ Config
 - Perfil editable + **3 baselines visibles** (Prensa, Banca, Pulldown con sus 1RM + peso×reps usados)
 - Wake lock toggle (pantalla no se apaga durante sesión)
+- **Auto-progresión** toggle (default ON) — ajusta pesos del plan al finalizar sesión
 - **Backup / Restore JSON** — exportar todo a archivo, importar desde archivo (sobrevive borrado de app, cambio de celular)
 - Reiniciar onboarding (re-genera plan con baselines actualizados)
 - _Sin API key ni integraciones externas — app 100% local_
@@ -161,8 +162,21 @@ App web móvil PWA de entrenamiento para **Andrés "El Oso" Loaiza** (Medellín)
 
 ## Reglas de progresión
 
-- Si completa todas las series con RIR 2+ → próxima sesión `+2.5kg`
-- Si no completa → mantiene peso
+**Auto-aplicadas** al finalizar sesión (`applyProgression()` en `index.html`, ~line 770). Toggle en Config (`settings.autoProgress`, default ON).
+
+- Compara reps reales por serie vs `targetReps` del plan (`DB.plan.weeks[w][d].exercises[i].reps`)
+- **Compuestos**: ±2.5kg. **Aislamiento**: ±1.25kg.
+- Todas series completas con reps ≥ target + `kneeStatus=bien` → **+bump**
+- 1 shortfall → **mantiene** (margen tolerancia día malo)
+- ≥2 shortfalls → **-bump**
+- `kneeStatus=leve` → mantiene (no progresar con molestia)
+- `kneeStatus=dolor` → -bump solo en `quadHeavy` (prensa, jack squat), resto mantiene
+- Cardio / `noWeight` / time-based → skip
+- Aplica a **todas las ocurrencias futuras** del mismo `(día, ex.id)` (no toca semanas pasadas)
+- **Caps PFPS** (`PROG_CAPS`): leg_ext 17.5 max, crossover 12 max (VMO endurance), step-up 15 max
+- Modal post-sesión muestra `nombre: viejo→nuevo kg ↑/↓` con botón "↶ Deshacer" (restaura snapshot del plan pre-progresión)
+
+Otras reglas:
 - `nextSession()` retorna primer día no completado del plan (independiente del calendario — secuencial)
 - `adaptSessionForKnee(td, status)` ajusta carga y ejercicios según check-in pre-sesión
 
