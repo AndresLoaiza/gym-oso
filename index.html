@@ -323,6 +323,18 @@
       </div>
     </div>
     <div class="card">
+      <h3>Telemetría UX</h3>
+      <label style="display:flex; gap:10px; align-items:center;">
+        <input type="checkbox" id="cfg-telemetry" style="width:20px; height:20px;">
+        <span style="font-size:13px;">Acumular eventos de uso para análisis de fricciones (100% local)</span>
+      </label>
+      <div class="small" style="color:var(--muted);margin-top:8px;" id="telemetry-summary">—</div>
+      <div class="btn-row" style="margin-top:10px;gap:8px;">
+        <button class="btn primary" id="export-telemetry" style="flex:1;">⬇ Exportar JSON</button>
+        <button class="btn ghost danger" id="clear-telemetry" style="color:var(--danger);border-color:var(--danger);">🗑 Borrar</button>
+      </div>
+    </div>
+    <div class="card">
       <h3>Backup / Restore</h3>
       <div class="small">Exporta toda tu data (perfil, plan, historial) a un archivo JSON. Guárdalo en iCloud Drive / Google Drive. Si borras la app o cambias de celular, impórtalo y vuelves justo donde estabas.</div>
       <div class="btn-row" style="margin-top:10px">
@@ -401,7 +413,8 @@ const DEFAULT_DB = {
   plan: null,    // {start, weeks: [[{focus, exercises:[...]}, ...]]}
   sessions: [],
   sessionSets: {},
-  settings: { wake: false, autoProgress: true }
+  settings: { wake: false, autoProgress: true, telemetry: true },
+  telemetry: { events: [], sessionId: null, startedAt: null, version: 1 }
 };
 let DB = loadDB();
 let wakeLock = null;
@@ -451,6 +464,7 @@ function term(key, label){
 function openTerm(key){
   const g = GLOSARIO[key];
   if(!g) return;
+  track('glosario_open', { term: key });
   openModal(`<h2>${key}</h2><div class="small" style="color:var(--accent);font-family:'DM Mono',monospace;margin-bottom:8px;">${g.full}</div><div style="font-size:14px;line-height:1.5;">${g.def}</div><button class="btn primary" style="margin-top:14px" onclick="closeModal()">Entendido</button>`);
 }
 window.openTerm = openTerm;
@@ -739,6 +753,7 @@ const HOWTO = {
 function openHowto(id){
   const h = HOWTO[id];
   if(!h) return;
+  track('howto_open', { exId: id });
   const sec = (title, items, color) => items && items.length
     ? `<div style="margin-top:10px;"><div style="color:${color};font-weight:600;font-size:13px;margin-bottom:4px;">${title}</div><ul style="margin:0;padding-left:18px;font-size:13px;line-height:1.55;">${items.map(i=>`<li>${i}</li>`).join('')}</ul></div>`
     : '';
@@ -835,6 +850,44 @@ function tagPlanWithWindows(){
       }
     }
   }
+}
+
+/* ============= TELEMETRÍA UX =============
+   Buffer local de eventos para análisis offline de fricciones UX.
+   100% local: nunca sale del dispositivo hasta que user exporta JSON.
+   Cap 2000 eventos (~120KB) — FIFO rotation. Toggle en Config.
+   Schema evento: { t: ISO, type: string, ...data específica del tipo } */
+const TELEMETRY_CAP = 2000;
+function uid(){ return Math.random().toString(36).slice(2,10) + Date.now().toString(36); }
+function track(type, data){
+  try {
+    if(DB.settings?.telemetry === false) return;
+    if(!DB.telemetry) DB.telemetry = { events: [], sessionId: null, startedAt: null, version: 1 };
+    if(!DB.telemetry.startedAt) DB.telemetry.startedAt = new Date().toISOString();
+    const ev = { t: new Date().toISOString(), type, ...(data || {}) };
+    if(DB.telemetry.sessionId) ev.sid = DB.telemetry.sessionId;
+    DB.telemetry.events.push(ev);
+    // FIFO rotation
+    if(DB.telemetry.events.length > TELEMETRY_CAP){
+      DB.telemetry.events.splice(0, DB.telemetry.events.length - TELEMETRY_CAP);
+    }
+    saveDB();
+  } catch(e){ /* never break app on telemetry */ }
+}
+// Resumen rápido para mostrar en Config
+function telemetrySummary(){
+  const t = DB.telemetry;
+  if(!t || !t.events.length) return { count:0, days:0, types:{} };
+  const types = {};
+  let minT = Infinity, maxT = 0;
+  for(const e of t.events){
+    types[e.type] = (types[e.type] || 0) + 1;
+    const ts = new Date(e.t).getTime();
+    if(ts < minT) minT = ts;
+    if(ts > maxT) maxT = ts;
+  }
+  const days = Math.max(1, Math.ceil((maxT - minT) / 86400000));
+  return { count: t.events.length, days, types };
 }
 
 /* ============= AUTO-PROGRESIÓN =============
@@ -1355,6 +1408,7 @@ function generateLocalPlan(){
 
 /* ============= NAV ============= */
 function show(tab){
+  track('screen_view', { screen: tab });
   $$('.nav-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
   $$('.screen').forEach(s => s.classList.toggle('active', s.id === 'screen-'+tab));
   // Action bars
@@ -1499,6 +1553,7 @@ function askKneeCheckin(onDone){
   `);
   $$('#modal [data-knee]').forEach(b => b.addEventListener('click', () => {
     DB._kneeStatus = b.dataset.knee;
+    track('knee_check', { status: b.dataset.knee });
     saveDB();
     closeModal();
     onDone();
@@ -1584,6 +1639,11 @@ function renderRutina(){
           sets: Array.from({length: ex.sets}, () => ({ reps: ex.reps, weight: ex.weight || 0, done: false })),
           note: ex.note || '' };
       });
+      // Iniciar sessionId telemetría
+      if(DB.telemetry){
+        DB.telemetry.sessionId = uid();
+        track('session_start', { planRef: newRef, knee: DB._kneeStatus, exCount: td.exercises.length, focus: td.focus });
+      }
       saveDB();
       renderRutinaInner(ns, td);
     });
@@ -1642,9 +1702,10 @@ function renderRutinaInner(ns, td){
       if(b.dataset.act === 'add-set'){
         const last = DB.sessionSets[i].sets.at(-1) || { reps: 10, weight: 0, done: false };
         DB.sessionSets[i].sets.push({ reps: last.reps, weight: last.weight, done: false, userAdded: true });
+        track('set_add', { exId: DB.sessionSets[i].id, idx: DB.sessionSets[i].sets.length-1 });
         saveDB(); renderSets(i); updateProgress();
-      } else if(b.dataset.act === 'rest-serie'){ startTimer(+b.dataset.r, 'serie'); }
-      else if(b.dataset.act === 'rest-ex'){ startTimer(+b.dataset.r, 'ejercicio'); }
+      } else if(b.dataset.act === 'rest-serie'){ track('rest_start', { kind:'serie', sec:+b.dataset.r }); startTimer(+b.dataset.r, 'serie'); }
+      else if(b.dataset.act === 'rest-ex'){ track('rest_start', { kind:'ejercicio', sec:+b.dataset.r }); startTimer(+b.dataset.r, 'ejercicio'); }
       else if(b.dataset.act === 'howto'){ openHowto(b.dataset.id); }
     });
   });
@@ -1687,19 +1748,31 @@ function renderSets(i){
     const wEl = timeOnly ? null : row.children[2];
     const btn = timeOnly ? row.children[2] : row.children[3];
     const delBtn = s.userAdded ? row.children[timeOnly ? 3 : 4] : null;
-    repsI.addEventListener('change', e => { s.reps = textReps ? e.target.value : (+e.target.value || 0); saveDB(); });
+    repsI.addEventListener('change', e => {
+      const oldR = s.reps;
+      s.reps = textReps ? e.target.value : (+e.target.value || 0);
+      track('set_edit', { exId: ex.id, idx: j, field: 'reps', old: oldR, new: s.reps });
+      saveDB();
+    });
     if(!hideWeight){
-      wEl.addEventListener('change', e => { s.weight = +e.target.value || 0; saveDB(); });
+      wEl.addEventListener('change', e => {
+        const oldW = s.weight;
+        s.weight = +e.target.value || 0;
+        track('set_edit', { exId: ex.id, idx: j, field: 'weight', old: oldW, new: s.weight });
+        saveDB();
+      });
     }
     btn.addEventListener('click', () => {
       s.done = !s.done;
       btn.className = 'check ' + (s.done ? 'done' : '');
       btn.textContent = s.done ? '✓' : '○';
+      track('set_check', { exId: ex.id, idx: j, done: s.done, reps: s.reps, weight: s.weight });
       if(s.done && !ex.isCardio) { startTimer(ex.rest ?? 90, 'serie'); if(navigator.vibrate) navigator.vibrate(50); }
       saveDB(); updateProgress();
     });
     if(delBtn){
       delBtn.addEventListener('click', () => {
+        track('set_delete', { exId: ex.id, idx: j });
         ex.sets.splice(j, 1); saveDB(); renderSets(i); updateProgress();
       });
     }
@@ -1716,7 +1789,11 @@ function updateProgress(){
 
 $('#reset-session').addEventListener('click', () => {
   if(!confirm('¿Descartar progreso actual y re-cargar ejercicios del plan? Te volverá a preguntar por la rodilla.')) return;
+  const exercises = Object.values(DB.sessionSets || {});
+  const doneSets = exercises.reduce((s,e) => s + (e.sets||[]).filter(x=>x.done).length, 0);
+  track('session_abandon', { doneSets, exCount: exercises.length });
   DB.sessionSets = {}; DB._currentRef = null; DB._kneeStatus = null; DB._adaptedSession = null;
+  if(DB.telemetry) DB.telemetry.sessionId = null;
   saveDB();
   renderRutina();
 });
@@ -1744,11 +1821,18 @@ $('#finish-session').addEventListener('click', () => {
     planRef: DB._currentRef || null,
     kneeStatus: DB._kneeStatus || 'bien'
   };
+  // Telemetría: duración + counts
+  const totalSets = exercises.reduce((s,e) => s + e.sets.length, 0);
+  const doneSets = exercises.reduce((s,e) => s + e.sets.filter(x=>x.done).length, 0);
+  const startEv = [...(DB.telemetry?.events||[])].reverse().find(e => e.type === 'session_start' && e.sid === DB.telemetry?.sessionId);
+  const durSec = startEv ? Math.round((new Date() - new Date(startEv.t))/1000) : null;
+  track('session_finish', { planRef: session.planRef, knee: session.kneeStatus, totalSets, doneSets, durSec, completedRatio: totalSets ? doneSets/totalSets : 0 });
   DB.sessions.push(session);
   DB.sessionSets = {};
   DB._currentRef = null;
   DB._kneeStatus = null;
   DB._adaptedSession = null;
+  if(DB.telemetry) DB.telemetry.sessionId = null;
   saveDB();
   releaseWake();
   // Auto-progresión: opcional, on por default
@@ -1930,6 +2014,12 @@ $('#clear-hist').addEventListener('click', () => {
 function renderConfig(){
   $('#cfg-wake').checked = !!DB.settings.wake;
   $('#cfg-autoprog').checked = DB.settings.autoProgress !== false;
+  $('#cfg-telemetry').checked = DB.settings.telemetry !== false;
+  const ts = telemetrySummary();
+  const topTypes = Object.entries(ts.types).sort((a,b)=>b[1]-a[1]).slice(0,3).map(([k,v])=>`${k}:${v}`).join(' · ');
+  $('#telemetry-summary').innerHTML = ts.count
+    ? `<b>${ts.count}</b> eventos · ${ts.days} días · top: ${topTypes || '—'}`
+    : 'Sin eventos aún. Empieza a usar la app.';
   const p = DB.profile || {};
   const b = p.baseline || {};
   const tests = b.tests || {};
@@ -1953,6 +2043,25 @@ $('#cfg-wake').addEventListener('change', e => {
 $('#cfg-autoprog').addEventListener('change', e => {
   DB.settings.autoProgress = e.target.checked;
   saveDB();
+});
+$('#cfg-telemetry').addEventListener('change', e => {
+  DB.settings.telemetry = e.target.checked;
+  saveDB();
+});
+$('#export-telemetry').addEventListener('click', () => {
+  const blob = new Blob([JSON.stringify(DB.telemetry || {events:[]}, null, 2)], { type:'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const stamp = new Date().toISOString().slice(0,16).replace(/[:T]/g,'-');
+  a.href = url; a.download = `elosogym-telemetry-${stamp}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+});
+$('#clear-telemetry').addEventListener('click', () => {
+  if(!confirm('¿Borrar todos los eventos de telemetría? Irreversible.')) return;
+  DB.telemetry = { events: [], sessionId: null, startedAt: null, version: 1 };
+  saveDB();
+  renderConfig();
 });
 $('#edit-profile').addEventListener('click', () => {
   obStep = 1; showOnboarding();

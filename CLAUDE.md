@@ -154,9 +154,41 @@ App web móvil PWA de entrenamiento para **Andrés "El Oso" Loaiza** (Medellín)
 - Perfil editable + **3 baselines visibles** (Prensa, Banca, Pulldown con sus 1RM + peso×reps usados)
 - Wake lock toggle (pantalla no se apaga durante sesión)
 - **Auto-progresión** toggle (default ON) — ajusta pesos del plan al finalizar sesión
+- **Telemetría UX** toggle (default ON) — acumula eventos de uso para análisis de fricciones, 100% local. Botón export JSON + clear. Summary muestra count + días + top tipos
 - **Backup / Restore JSON** — exportar todo a archivo, importar desde archivo (sobrevive borrado de app, cambio de celular)
 - Reiniciar onboarding (re-genera plan con baselines actualizados)
 - _Sin API key ni integraciones externas — app 100% local_
+
+## Telemetría UX
+
+Buffer local en `DB.telemetry.events` (FIFO cap 2000, ~120KB). 100% local — nunca sale del dispositivo hasta export manual.
+
+**Helper:** `track(type, data)` en `index.html`. Skip silencioso si `settings.telemetry === false`. Nunca rompe la app (try/catch).
+
+**Schema evento:** `{ t: ISO, type: string, sid?: sessionId, ...data }`
+
+**Tipos hookeados:**
+- `screen_view { screen }` — nav entre tabs
+- `modal_open { name }` — implícito vía openModal/Howto/Term
+- `glosario_open { term }`
+- `howto_open { exId }`
+- `knee_check { status }` — bien/leve/dolor
+- `session_start { planRef, knee, exCount, focus }` — inicia sessionId
+- `session_finish { planRef, knee, totalSets, doneSets, durSec, completedRatio }` — calcula duración desde session_start
+- `session_abandon { doneSets, exCount }` — botón reset
+- `set_add { exId, idx }`
+- `set_delete { exId, idx }`
+- `set_edit { exId, idx, field, old, new }` — reps o weight
+- `set_check { exId, idx, done, reps, weight }`
+- `rest_start { kind, sec }` — serie o ejercicio
+
+**Análisis offline:** user exporta JSON desde Config → pasa a Claude → identifica:
+- HOWTO/glosario más abiertos = conceptos confusos
+- Sets con muchos edits = pesos/reps default mismatch
+- Session abandons = friction points
+- durSec por sesión vs estimado
+- Rest start vs sin start = compliance timer
+- Knee check distribution = adherencia + estado real PFPS
 
 -----
 
