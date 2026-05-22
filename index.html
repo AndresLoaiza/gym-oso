@@ -779,6 +779,64 @@ function epley1RM(weight, reps){
 }
 function workWeight(oneRM, pct){ return Math.round(oneRM * pct / 2.5) * 2.5; }
 
+/* ============= OBJETIVO + WINDOWS =============
+   Objetivo único: trekking nivel 4 con PFPS. Define ventanas de reps por
+   (tipo ejercicio × fase periodización). Drive de double progression:
+   completas repMax → +peso + reset a repMin. Mientras < repMax → +1 rep.
+   Evidencia: Helms RP double progression, Schoenfeld 2017 rep windows,
+   Powers 2010 PFPS endurance bias, ACSM 2026 periodización 4 fases. */
+const OBJECTIVE = {
+  id: 'trekking_n4_pfps',
+  name: 'Trekking nivel 4',
+  description: 'Endurance multihora bajo carga + protección PFPS + cadenas posteriores',
+  pattern: 'straight_sets',  // Schoenfeld 2017: óptimo vs pyramid/drop para principiante + PFPS
+  windows: {
+    // [repMin, repMax] por (type × phase). Plan inicial entra en mid-range.
+    strength:  { adapt:[10,15], str:[5,8],  end:[12,18], taper:[8,12] },
+    endurance: { adapt:[12,20], str:[12,18],end:[15,25], taper:[12,18] },
+    pfps:      { adapt:[12,20], str:[12,18],end:[15,20], taper:[12,18] },
+    posterior: { adapt:[8,15],  str:[8,12], end:[12,18], taper:[10,15] },
+  }
+};
+
+const EX_TYPE = {
+  leg_press_45:'strength', banco_plano:'strength', remo_isolateral:'strength',
+  pulldown:'strength', press_hombros_107:'strength', jack_squat:'strength',
+  pantorrilla_sentado:'endurance', mancuernas:'endurance',
+  hiper_inversa:'posterior', prone_leg_curl:'posterior',
+  leg_ext:'pfps', crossover:'pfps', adductor_abductor:'pfps',
+  camber_curl:'endurance',
+};
+
+function phaseOfWeek(w){ return w<2 ? 'adapt' : w<5 ? 'str' : w<7 ? 'end' : 'taper'; }
+function windowOf(exId, ph){
+  const t = EX_TYPE[exId];
+  if(!t || !OBJECTIVE.windows[t]?.[ph]) return null;
+  const [repMin, repMax] = OBJECTIVE.windows[t][ph];
+  return { type:t, phase:ph, repMin, repMax };
+}
+
+/* Inyecta type/phase/repMin/repMax a cada ex del plan. Idempotente.
+   Llamar tras generateLocalPlan() y en migración boot para planes viejos. */
+function tagPlanWithWindows(){
+  if(!DB.plan?.weeks) return;
+  for(let w = 0; w < DB.plan.weeks.length; w++){
+    const ph = phaseOfWeek(w);
+    for(const day of DB.plan.weeks[w] || []){
+      for(const ex of day.exercises || []){
+        if(ex.isCardio || ex.noWeight) continue;
+        const win = windowOf(ex.id, ph);
+        if(win){
+          ex.type = win.type;
+          ex.phase = win.phase;
+          ex.repMin = win.repMin;
+          ex.repMax = win.repMax;
+        }
+      }
+    }
+  }
+}
+
 /* ============= AUTO-PROGRESIÓN =============
    Aplicada al finalizar sesión. Compara reps reales vs target del plan.
    Reglas (NSCA + PFPS):
@@ -846,38 +904,62 @@ function analyzeWeightPattern(setsDone, targetReps){
   return { kind, topSet, dropDetected };
 }
 
-/* Decide bump + razón. Reglas (orden importa):
+/* Decide progresión: devuelve { weightBump, repBump, reason }.
+   Double progression (Helms RP, Schoenfeld 2017):
+   - allComplete + repWindow definido + targetReps < repMax → +1 rep (sin peso)
+   - allComplete + targetReps >= repMax → +peso + reset reps a repMin
+   - Sin repWindow → fallback comportamiento v2 (+peso constante)
+   Orden de evaluación:
    1. Skip cardio/noWeight/time
    2. knee=leve → 0
-   3. knee=dolor + quadHeavy → -step
-   4. drop detectado (descending ≥10%) → 0 "fatiga ceiling"
-   5. ≥2 shortfalls reps → -step
-   6. ningún set done → 0
-   7. allComplete + knee=bien → +step
-   8. 1 shortfall → 0 "margen día malo"
-   9. mixed/parcial → 0 */
-function decideBump(ex, knee, targetReps, pattern){
-  if(ex.isCardio || ex.noWeight) return { bump:0, reason:'cardio/iso' };
-  if(knee === 'leve') return { bump:0, reason:'rodilla leve: no progresa' };
-  if(typeof targetReps !== 'number') return { bump:0, reason:'time-based' };
+   3. knee=dolor + quadHeavy → -peso (mantiene reps)
+   4. dropDetected → 0 (techo fatiga, González-Badillo)
+   5. ≥2 shortfalls → -peso
+   6. sin sets done → 0
+   7. allComplete + bien → double progression (+rep o +peso+reset)
+   8. 1 shortfall → 0 (margen día malo) */
+function decideBump(ex, knee, targetReps, pattern, planEx){
+  const z = { weightBump:0, repBump:0, reason:'' };
+  if(ex.isCardio || ex.noWeight) return { ...z, reason:'cardio/iso' };
+  if(knee === 'leve') return { ...z, reason:'rodilla leve: no progresa' };
+  if(typeof targetReps !== 'number') return { ...z, reason:'time-based' };
   const cap = PROG_CAPS[ex.id] || {};
   const step = cap.isolation ? 1.25 : 2.5;
   const done = ex.sets.filter(s => s.done);
-  if(done.length === 0) return { bump:0, reason:'sin series done' };
-  if(knee === 'dolor' && cap.quadHeavy) return { bump:-step, reason:'dolor: -bump cuádriceps' };
-  if(pattern.dropDetected) return { bump:0, reason:'drop ≥10% intra-sesión: techo fatiga' };
+  if(done.length === 0) return { ...z, reason:'sin series done' };
+  if(knee === 'dolor' && cap.quadHeavy) return { weightBump:-step, repBump:0, reason:'dolor: -peso cuádriceps' };
+  if(pattern.dropDetected) return { ...z, reason:'drop ≥10%: techo fatiga' };
   const shortfalls = done.filter(s => (+s.reps || 0) < targetReps).length;
-  if(shortfalls >= 2) return { bump:-step, reason:`${shortfalls} series < ${targetReps} reps` };
+  if(shortfalls >= 2) return { weightBump:-step, repBump:0, reason:`${shortfalls} series < ${targetReps} reps` };
   const allComplete = done.length === ex.sets.length && shortfalls === 0;
   if(allComplete && knee === 'bien'){
-    const variant = pattern.kind === 'ascending' ? ' (pyramid: warm-up integrado)'
-                  : pattern.kind === 'mixed' ? ' (varianza mixta)' : '';
-    return { bump:+step, reason:`completo RIR 2+${variant}` };
+    const repMax = planEx?.repMax;
+    const repMin = planEx?.repMin;
+    if(typeof repMax === 'number' && typeof repMin === 'number'){
+      // DOUBLE PROGRESSION
+      if(targetReps < repMax){
+        return { weightBump:0, repBump:+1, reason:`+1 rep → ${targetReps+1}/${repMax} (double prog)` };
+      }
+      // ya en repMax → +peso + reset reps a repMin
+      return { weightBump:+step, repBump: (repMin - targetReps), reason:`repMax ${repMax} ✓: +${step}kg + reset ${repMin} reps` };
+    }
+    // Sin window: fallback simple
+    const variant = pattern.kind === 'ascending' ? ' (warm-up integrado)' : '';
+    return { weightBump:+step, repBump:0, reason:`completo RIR 2+${variant}` };
   }
-  if(shortfalls === 1) return { bump:0, reason:'1 short: margen día malo' };
-  return { bump:0, reason:'parcial' };
+  if(shortfalls === 1) return { ...z, reason:'1 short: margen día malo' };
+  return { ...z, reason:'parcial' };
 }
 
+/* Aplica progresión al plan futuro:
+   - weightBump: a TODAS las semanas futuras del mismo (day, ex.id) con
+     mismo phase (no cruza fases — strength vs endurance tienen %1RM distintos).
+   - repBump > 0 (escalación intra-window): solo a la PRÓXIMA ocurrencia
+     same-day same-phase. Clamp a repMax.
+   - repBump < 0 (reset por repMax alcanzado): a todas las same-phase futuras,
+     reset reps a repMin.
+   - Weight base = max(topSet con reps target, planWeight) — evita peso obsoleto.
+   - Sync sin bump: si user usó peso constante distinto al plan, propaga ese peso. */
 function applyProgression(session){
   const ref = session.planRef;
   if(!ref || !DB.plan?.weeks) return [];
@@ -891,50 +973,89 @@ function applyProgression(session){
     const targetReps = planEx && typeof planEx.reps === 'number' ? planEx.reps : null;
     const done = ex.sets.filter(s => s.done);
     const pattern = analyzeWeightPattern(done, targetReps);
-    const { bump, reason } = decideBump(ex, knee, targetReps, pattern);
-    if(bump === 0) {
-      // si user usó peso constante distinto al plan → adoptar sin bump
+    const { weightBump, repBump, reason } = decideBump(ex, knee, targetReps, pattern, planEx);
+    const cap = PROG_CAPS[ex.id] || {};
+    const planPhase = planEx?.phase;
+
+    // Sin bump: detectar sync de peso (user constante a peso distinto)
+    if(weightBump === 0 && repBump === 0){
       if(pattern.kind === 'constant' && pattern.topSet && planEx
-         && pattern.topSet.weight > 0 && pattern.topSet.weight !== (+planEx.weight||0)){
-        // sin bump, solo sync futuro al peso real del user (si reps cumplieron)
-        if(typeof targetReps !== 'number' || pattern.topSet.reps >= targetReps){
-          const cap = PROG_CAPS[ex.id] || {};
-          const newW = Math.max(2.5, Math.min(cap.max ?? Infinity, pattern.topSet.weight));
-          let applied = false, beforeW = null, afterW = null;
-          for(let wi = w + 1; wi < DB.plan.weeks.length; wi++){
-            const day = DB.plan.weeks[wi]?.[d];
-            const target = day?.exercises.find(e => e.id === ex.id);
-            if(!target || target.isCardio || target.noWeight) continue;
-            const oldW = +target.weight || 0;
-            if(newW === oldW) continue;
-            target.weight = newW;
-            if(!applied){ beforeW = oldW; afterW = newW; applied = true; }
-          }
-          if(applied) changes.push({ id:ex.id, name:ex.name, from:beforeW, to:afterW,
-                                     bump:0, reason:`sync a peso usado (${pattern.topSet.weight}kg)` });
+         && pattern.topSet.weight > 0 && pattern.topSet.weight !== (+planEx.weight||0)
+         && (typeof targetReps !== 'number' || pattern.topSet.reps >= targetReps)){
+        const newW = Math.max(2.5, Math.min(cap.max ?? Infinity, pattern.topSet.weight));
+        let applied = false, beforeW = null, afterW = null;
+        for(let wi = w + 1; wi < DB.plan.weeks.length; wi++){
+          const target = DB.plan.weeks[wi]?.[d]?.exercises.find(e => e.id === ex.id);
+          if(!target || target.isCardio || target.noWeight) continue;
+          if(planPhase && target.phase && target.phase !== planPhase) continue;
+          const oldW = +target.weight || 0;
+          if(newW === oldW) continue;
+          target.weight = newW;
+          if(!applied){ beforeW = oldW; afterW = newW; applied = true; }
         }
+        if(applied) changes.push({ id:ex.id, name:ex.name, fromW:beforeW, toW:afterW,
+                                   fromR:targetReps, toR:targetReps,
+                                   weightBump:0, repBump:0, reason:`sync peso usado (${pattern.topSet.weight}kg)` });
       }
       continue;
     }
-    const cap = PROG_CAPS[ex.id] || {};
-    // base = max(topSet, planWeight) → evita bump sobre peso obsoleto del plan
+
     const planWeight = planEx ? (+planEx.weight || 0) : 0;
     const baseW = Math.max(pattern.topSet?.weight || 0, planWeight);
-    let applied = false, beforeW = null, afterW = null;
-    for(let wi = w + 1; wi < DB.plan.weeks.length; wi++){
-      const day = DB.plan.weeks[wi]?.[d];
-      if(!day) continue;
-      const target = day.exercises.find(e => e.id === ex.id);
-      if(!target || target.isCardio || target.noWeight) continue;
-      const oldW = +target.weight || 0;
-      // bump aplica sobre max(base, oldW) para no bajar pesos posteriores ya escalados
-      const ref = Math.max(baseW, oldW);
-      const newW = Math.max(2.5, Math.min(cap.max ?? Infinity, ref + bump));
-      if(newW === oldW) continue;
-      target.weight = newW;
-      if(!applied){ beforeW = oldW; afterW = newW; applied = true; }
+    let appliedW = false, beforeW = null, afterW = null;
+    let appliedR = false, beforeR = targetReps, afterR = targetReps;
+
+    // Weight: futuras same-phase
+    if(weightBump !== 0){
+      for(let wi = w + 1; wi < DB.plan.weeks.length; wi++){
+        const target = DB.plan.weeks[wi]?.[d]?.exercises.find(e => e.id === ex.id);
+        if(!target || target.isCardio || target.noWeight) continue;
+        if(planPhase && target.phase && target.phase !== planPhase) continue;
+        const oldW = +target.weight || 0;
+        const refW = Math.max(baseW, oldW);
+        const newW = Math.max(2.5, Math.min(cap.max ?? Infinity, refW + weightBump));
+        if(newW === oldW) continue;
+        target.weight = newW;
+        if(!appliedW){ beforeW = oldW; afterW = newW; appliedW = true; }
+      }
     }
-    if(applied) changes.push({ id:ex.id, name:ex.name, from:beforeW, to:afterW, bump, reason });
+
+    // Reps: escalación a próxima only, reset a todas same-phase
+    if(repBump !== 0){
+      if(repBump < 0){
+        // reset a repMin en todas same-phase futuras
+        const repMin = planEx?.repMin || (targetReps + repBump);
+        for(let wi = w + 1; wi < DB.plan.weeks.length; wi++){
+          const target = DB.plan.weeks[wi]?.[d]?.exercises.find(e => e.id === ex.id);
+          if(!target || typeof target.reps !== 'number') continue;
+          if(planPhase && target.phase && target.phase !== planPhase) continue;
+          if(target.reps === repMin) continue;
+          if(!appliedR){ beforeR = target.reps; afterR = repMin; appliedR = true; }
+          target.reps = repMin;
+        }
+      } else {
+        // escalación: solo próxima semana same-day same-phase
+        const target = DB.plan.weeks[w+1]?.[d]?.exercises.find(e => e.id === ex.id);
+        if(target && typeof target.reps === 'number'
+           && (!planPhase || !target.phase || target.phase === planPhase)){
+          const repMax = planEx?.repMax || Infinity;
+          const newR = Math.min(repMax, (+target.reps || targetReps) + repBump);
+          if(newR !== target.reps){
+            beforeR = target.reps; afterR = newR; appliedR = true;
+            target.reps = newR;
+          }
+        }
+      }
+    }
+
+    if(appliedW || appliedR){
+      changes.push({
+        id:ex.id, name:ex.name,
+        fromW: appliedW ? beforeW : planWeight, toW: appliedW ? afterW : planWeight,
+        fromR: beforeR, toR: afterR,
+        weightBump, repBump, reason
+      });
+    }
   }
   if(changes.length) saveDB();
   return changes;
@@ -1226,7 +1347,8 @@ function generateLocalPlan(){
     ];
     weeks.push(wk);
   }
-  DB.plan = { start: todayISO(), weeks, generatedBy: 'local' };
+  DB.plan = { start: todayISO(), weeks, generatedBy: 'local', objective: OBJECTIVE.id };
+  tagPlanWithWindows();
   saveDB();
 }
 
@@ -1255,7 +1377,11 @@ function renderHome(){
   const ns = nextSession();
   if(ns){
     const td = ns.session;
-    t.innerHTML = `<div class="muscle">Semana ${ns.weekIdx+1} · Día ${ns.dayIdx+1} · ${td.focus}</div>
+    const phLabel = { adapt:'Adaptación', str:'Fuerza', end:'Endurance', taper:'Taper' }[phaseOfWeek(ns.weekIdx)] || '—';
+    t.innerHTML = `<div class="small" style="color:var(--accent);font-family:'DM Mono',monospace;margin-bottom:4px;">
+        🎯 ${OBJECTIVE.name} · Fase: ${phLabel}
+      </div>
+      <div class="muscle">Semana ${ns.weekIdx+1} · Día ${ns.dayIdx+1} · ${td.focus}</div>
       <div style="font-size:13px; margin-top:6px;">${td.exercises.length} ejercicios · ${td.notes || ''}</div>`;
   } else {
     t.innerHTML = `<div class="small">Plan de 8 semanas completado 🎉. Inicia siguiente sesión para empezar nuevo ciclo.</div>`;
@@ -1642,22 +1768,26 @@ let _progSnapshot = null;
 function showProgressionModal(changes, snapshot){
   _progSnapshot = snapshot;
   const rows = changes.map(c => {
-    const arrow = c.bump > 0 ? '↑' : c.bump < 0 ? '↓' : '→';
-    const color = c.bump > 0 ? '#7be495' : c.bump < 0 ? 'var(--warn)' : 'var(--accent)';
-    const delta = c.bump > 0 ? `+${c.bump}` : c.bump < 0 ? `${c.bump}` : 'sync';
+    const wChanged = c.fromW !== c.toW;
+    const rChanged = c.fromR !== c.toR;
+    const isUp = c.weightBump > 0 || c.repBump > 0;
+    const isDown = c.weightBump < 0 || (c.repBump < 0 && c.weightBump === 0);
+    const color = isUp ? '#7be495' : isDown ? 'var(--warn)' : 'var(--accent)';
+    const wPart = wChanged ? `<span style="color:${color};">${c.fromW}→${c.toW}kg</span>` : `<span style="color:var(--muted);">${c.toW}kg</span>`;
+    const rPart = rChanged ? `<span style="color:${color};">${c.fromR}→${c.toR} reps</span>` : `<span style="color:var(--muted);">${c.toR} reps</span>`;
     return `<div style="padding:8px 0;border-bottom:1px solid var(--surface2);font-size:13px;">
-      <div style="display:flex;justify-content:space-between;">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;">
         <span style="font-weight:600;">${c.name}</span>
-        <span style="color:${color};font-family:'DM Mono',monospace;">${c.from}→${c.to}kg ${arrow}</span>
+        <span style="font-family:'DM Mono',monospace;font-size:12px;">${wPart} · ${rPart}</span>
       </div>
-      <div style="color:var(--muted);font-size:11px;margin-top:2px;">${delta}kg · ${c.reason}</div>
+      <div style="color:var(--muted);font-size:11px;margin-top:2px;">${c.reason}</div>
     </div>`;
   }).join('');
   openModal(`
     <h2 style="font-size:18px;">Progresión aplicada ✓</h2>
     <div class="small" style="color:var(--muted);margin-bottom:10px;">
-      Cambios aplicados al plan desde la próxima ocurrencia. Basado en:
-      top-set (peso pesado con reps target), patrón intra-sesión (constante/pyramid/drop), kneeStatus.
+      Double progression (Helms RP): suma <b>reps primero</b> hasta repMax → luego +peso + reset.
+      Aplica solo a futuras semanas de la misma fase.
     </div>
     <div>${rows}</div>
     <div class="btn-row" style="margin-top:14px;gap:8px;">
@@ -1882,6 +2012,15 @@ document.addEventListener('visibilitychange', () => { if(document.visibilityStat
 function showApp(){ $('#onboarding').style.display='none'; $('#ob-actions').style.display='none'; $('#app').style.display=''; show('home'); }
 
 migrateBaselineFormula();
+// Migración tags windows: si plan existe sin type/repMin/repMax → inyectar
+if(DB.plan?.weeks){
+  const firstEx = DB.plan.weeks[0]?.[0]?.exercises?.find(e => !e.isCardio && !e.noWeight);
+  if(firstEx && (firstEx.type === undefined || firstEx.repMin === undefined)){
+    tagPlanWithWindows();
+    DB.plan.objective = OBJECTIVE.id;
+    saveDB();
+  }
+}
 if(!DB.profile){ showOnboarding(); }
 else { showApp(); }
 

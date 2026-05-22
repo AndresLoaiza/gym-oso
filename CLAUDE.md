@@ -160,43 +160,63 @@ App web móvil PWA de entrenamiento para **Andrés "El Oso" Loaiza** (Medellín)
 
 -----
 
+## Objetivo + ventanas de progresión
+
+**`OBJECTIVE`** (singleton, `index.html`): `trekking_n4_pfps`. Define `windows[type][phase] = [repMin, repMax]` para double progression. Extensible a múltiples objetivos en el futuro.
+
+**`EX_TYPE`** mapea cada `ex.id` a un tipo: `strength` (compuestos), `endurance` (sóleo, mancuernas), `pfps` (leg ext, abductor, crossover), `posterior` (hiper inversa, prone curl).
+
+**Pattern recomendado**: `straight_sets`. Evidencia: Schoenfeld 2017 meta — equivale a pyramid/drop volume-equated, sin penalización + tracking limpio + estrés rotuliano constante (PFPS).
+
+**Ventanas (`OBJECTIVE.windows`)** — [repMin, repMax]:
+- `strength`: adapt [10,15] · str [5,8] · end [12,18] · taper [8,12]
+- `endurance`: adapt [12,20] · str [12,18] · end [15,25] · taper [12,18]
+- `pfps`: adapt [12,20] · str [12,18] · end [15,20] · taper [12,18]
+- `posterior`: adapt [8,15] · str [8,12] · end [12,18] · taper [10,15]
+
+`tagPlanWithWindows()` inyecta `{type, phase, repMin, repMax}` a cada ex del plan. Llamado tras `generateLocalPlan()` y como migración boot para planes existentes.
+
 ## Reglas de progresión
 
-**Auto-aplicadas** al finalizar sesión (`applyProgression()` en `index.html`). Toggle en Config (`settings.autoProgress`, default ON).
+**Auto-aplicadas** al finalizar sesión (`applyProgression()`). Toggle Config (`settings.autoProgress`, default ON).
 
-### Esquema de series recomendado
-**Straight sets** (mismo peso N series). Evidencia: Schoenfeld 2017 meta-analysis — volume-equated, equivale a esquemas variados sin penalización. Para PFPS: estrés rotuliano constante = clave. NO reverse pyramid, NO drop sets (carga descontrolada al fallo).
+### Double progression (Helms RP, Schoenfeld 2017)
+1. Cumples reps target en todas las series + rodilla bien → **+1 rep next session** (sin tocar peso) hasta llegar a `repMax`
+2. Llegas a `repMax` con todas series completas → **+peso + reset reps a `repMin`**
+3. Sin window (plan viejo sin migrar) → fallback simple (+peso constante)
 
-### Detección de patrón intra-sesión (`analyzeWeightPattern`)
-Analiza pesos entre sets `done` y devuelve `{ kind, topSet, dropDetected }`:
+### Decisión (`decideBump`)
+Devuelve `{ weightBump, repBump, reason }`. Orden:
+1. Cardio / `noWeight` / time-based → skip
+2. `kneeStatus=leve` → 0 (no progresar con molestia)
+3. `kneeStatus=dolor` + `quadHeavy` → -step peso (prensa, jack squat)
+4. `dropDetected` (descending ≥10% intra-sesión, González-Badillo) → 0
+5. ≥2 shortfalls reps → -step peso
+6. `allComplete` + `bien` → double progression (+1 rep o +peso+reset)
+7. 1 shortfall → 0 (margen día malo)
+
+### Detección patrón intra-sesión (`analyzeWeightPattern`)
 - `constant`: max=min → bump normal
-- `ascending` (pyramid up): warm-up implícito (Mangine 2018) → bump normal, usa top set
-- `descending`: si `last <= first × 0.9` → `dropDetected=true` (fatiga ceiling, González-Badillo velocity loss)
-- `mixed`: bump normal pero flagueado
+- `ascending` (pyramid up): warm-up implícito (Mangine 2018) → bump normal usando top set
+- `descending`: si `last <= first × 0.9` → `dropDetected=true` (fatiga ceiling)
+- `mixed`: bump normal flagueado en modal
 
 `topSet`: serie con max peso que cumplió `targetReps` (Helms RP top-set assessment).
 
-### Decisión bump (`decideBump`)
-Orden de evaluación:
-1. Cardio / `noWeight` / time-based → skip
-2. `kneeStatus=leve` → 0 (no progresar con molestia)
-3. `kneeStatus=dolor` + `quadHeavy` → -step (prensa, jack squat)
-4. `dropDetected` → 0 (fatiga ceiling)
-5. ≥2 shortfalls reps → -step (peso muy alto)
-6. `allComplete` + `bien` → +step (compuestos +2.5, aislamiento +1.25)
-7. 1 shortfall → 0 (margen día malo)
-
 ### Aplicación (`applyProgression`)
-- Bump aplica sobre `max(topSet.weight, planWeight)` — evita bumpear sobre peso obsoleto
-- Itera `wi = w+1 → fin` actualizando `(d, ex.id)` en todas las semanas futuras
-- Si user usó peso constante distinto al plan (sin bump) → **sync** al peso real
-- **Caps PFPS** (`PROG_CAPS`): leg_ext 17.5 max, crossover 12 max (VMO endurance neuromuscular), step-up 15 max, abductor 22.5 max
-- Modal post-sesión muestra `from→to kg ↑/↓` + razón por ejercicio + "↶ Deshacer" (restaura snapshot del plan)
+- **Weight bump**: a todas las semanas futuras del mismo `(d, ex.id)` con mismo `phase` (no cruza fases — strength vs endurance tienen %1RM distintos)
+- **Rep bump > 0** (escalación intra-window): solo a próxima semana same-day same-phase, clamp a `repMax`
+- **Rep bump < 0** (reset por repMax alcanzado): a todas same-phase futuras, reset a `repMin`
+- **Weight base** = `max(topSet con reps target, planWeight)` — evita peso obsoleto
+- **Sync sin bump**: si user usó peso constante distinto al plan, propaga ese peso
+- **Caps PFPS** (`PROG_CAPS`): leg_ext 17.5 max, crossover 12 max, step-up 15 max, abductor 22.5 max
+- Modal post-sesión muestra `from→to kg · from→to reps` + razón + "↶ Deshacer"
 
 ### Adaptación al objetivo trekking
-- Compuestos: progresar hasta ~6-8RM ceiling, después mantener (powerlifting irrelevante)
-- Sóleo/posterior chain: progresar reps + peso (endurance dominante)
-- PFPS aislamiento: caps duros, prioridad neuromuscular > carga
+- Compuestos: progresar a ceiling phase (str repMax=8 ≈ 6RM práctico), después mantener (powerlifting irrelevante)
+- Sóleo/posterior chain: ventanas amplias (15-25 reps end phase) → endurance dominante
+- PFPS aislamiento: ventana fija 12-20 reps todas fases + caps duros peso → neuromuscular > carga
+- Cardio (stairmaster/trotadora): progresión por tiempo hardcoded en plan generator (`reps:${10+week} min`)
 
 Otras reglas:
 - `nextSession()` retorna primer día no completado del plan (independiente del calendario — secuencial)
