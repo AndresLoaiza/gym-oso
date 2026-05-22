@@ -162,19 +162,41 @@ App web móvil PWA de entrenamiento para **Andrés "El Oso" Loaiza** (Medellín)
 
 ## Reglas de progresión
 
-**Auto-aplicadas** al finalizar sesión (`applyProgression()` en `index.html`, ~line 770). Toggle en Config (`settings.autoProgress`, default ON).
+**Auto-aplicadas** al finalizar sesión (`applyProgression()` en `index.html`). Toggle en Config (`settings.autoProgress`, default ON).
 
-- Compara reps reales por serie vs `targetReps` del plan (`DB.plan.weeks[w][d].exercises[i].reps`)
-- **Compuestos**: ±2.5kg. **Aislamiento**: ±1.25kg.
-- Todas series completas con reps ≥ target + `kneeStatus=bien` → **+bump**
-- 1 shortfall → **mantiene** (margen tolerancia día malo)
-- ≥2 shortfalls → **-bump**
-- `kneeStatus=leve` → mantiene (no progresar con molestia)
-- `kneeStatus=dolor` → -bump solo en `quadHeavy` (prensa, jack squat), resto mantiene
-- Cardio / `noWeight` / time-based → skip
-- Aplica a **todas las ocurrencias futuras** del mismo `(día, ex.id)` (no toca semanas pasadas)
-- **Caps PFPS** (`PROG_CAPS`): leg_ext 17.5 max, crossover 12 max (VMO endurance), step-up 15 max
-- Modal post-sesión muestra `nombre: viejo→nuevo kg ↑/↓` con botón "↶ Deshacer" (restaura snapshot del plan pre-progresión)
+### Esquema de series recomendado
+**Straight sets** (mismo peso N series). Evidencia: Schoenfeld 2017 meta-analysis — volume-equated, equivale a esquemas variados sin penalización. Para PFPS: estrés rotuliano constante = clave. NO reverse pyramid, NO drop sets (carga descontrolada al fallo).
+
+### Detección de patrón intra-sesión (`analyzeWeightPattern`)
+Analiza pesos entre sets `done` y devuelve `{ kind, topSet, dropDetected }`:
+- `constant`: max=min → bump normal
+- `ascending` (pyramid up): warm-up implícito (Mangine 2018) → bump normal, usa top set
+- `descending`: si `last <= first × 0.9` → `dropDetected=true` (fatiga ceiling, González-Badillo velocity loss)
+- `mixed`: bump normal pero flagueado
+
+`topSet`: serie con max peso que cumplió `targetReps` (Helms RP top-set assessment).
+
+### Decisión bump (`decideBump`)
+Orden de evaluación:
+1. Cardio / `noWeight` / time-based → skip
+2. `kneeStatus=leve` → 0 (no progresar con molestia)
+3. `kneeStatus=dolor` + `quadHeavy` → -step (prensa, jack squat)
+4. `dropDetected` → 0 (fatiga ceiling)
+5. ≥2 shortfalls reps → -step (peso muy alto)
+6. `allComplete` + `bien` → +step (compuestos +2.5, aislamiento +1.25)
+7. 1 shortfall → 0 (margen día malo)
+
+### Aplicación (`applyProgression`)
+- Bump aplica sobre `max(topSet.weight, planWeight)` — evita bumpear sobre peso obsoleto
+- Itera `wi = w+1 → fin` actualizando `(d, ex.id)` en todas las semanas futuras
+- Si user usó peso constante distinto al plan (sin bump) → **sync** al peso real
+- **Caps PFPS** (`PROG_CAPS`): leg_ext 17.5 max, crossover 12 max (VMO endurance neuromuscular), step-up 15 max, abductor 22.5 max
+- Modal post-sesión muestra `from→to kg ↑/↓` + razón por ejercicio + "↶ Deshacer" (restaura snapshot del plan)
+
+### Adaptación al objetivo trekking
+- Compuestos: progresar hasta ~6-8RM ceiling, después mantener (powerlifting irrelevante)
+- Sóleo/posterior chain: progresar reps + peso (endurance dominante)
+- PFPS aislamiento: caps duros, prioridad neuromuscular > carga
 
 Otras reglas:
 - `nextSession()` retorna primer día no completado del plan (independiente del calendario — secuencial)

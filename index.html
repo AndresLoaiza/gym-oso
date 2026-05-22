@@ -243,7 +243,8 @@
       <ul style="font-size:13px; margin: 10px 0 0 20px; line-height: 1.8;">
         <li>Carga: trabajar en <span class="term" onclick="openTerm('RIR')">RIR</span> 2-3 (deja 2-3 reps en reserva). Si llegas al fallo → bajaste mal o peso muy alto.</li>
         <li>Reps óptimas para principiante + fuerza-resistencia: <b>10-15 reps</b>. Pierna: 12-15.</li>
-        <li>Progresión: si completas todas las series con RIR 2+ → <b>+2.5kg</b> próxima sesión.</li>
+        <li><b>Mismo peso todas las series</b> (straight sets). Evidencia: Schoenfeld 2017 — equivale a esquemas variados, sin penalización + tracking limpio + estrés rotuliano constante (clave PFPS). NO drop-sets ni hacer reverse pyramid.</li>
+        <li>Progresión auto (toggle en Config): completas todas las series con reps target + rodilla bien → <b>+2.5kg</b> compuestos / <b>+1.25kg</b> aislamiento próxima sesión. Drop intra-sesión ≥10% → mantiene.</li>
         <li>Rodilla: <b>NO</b> pases de 30° de flexión bajo carga. Pies altos en prensa.</li>
         <li>Si dolor &gt; 3/10 → reduce <span class="term" onclick="openTerm('ROM')">ROM</span> o carga. Frenar <span class="term" onclick="openTerm('Excéntrica')">excéntrica</span>.</li>
       </ul>
@@ -807,20 +808,74 @@ const PROG_CAPS = {
   pulldown: {},
 };
 
-function decideBump(ex, knee, targetReps){
-  if(ex.isCardio || ex.noWeight) return 0;
-  if(knee === 'leve') return 0;
-  if(typeof targetReps !== 'number') return 0;  // time-based
+/* Analiza patrón de pesos entre sets done. Devuelve:
+   - kind: 'constant' | 'ascending' | 'descending' | 'mixed'
+   - topSet: { weight, reps } de la serie pesada que cumplió target reps
+   - dropDetected: bool (descending ≥10% intra-sesión = fatiga ceiling)
+   Evidencia: top-set assessment (Helms RP), velocity loss / drop interpretation
+   (González-Badillo). Varianza ascendente = warm-up implícito (Mangine 2018, no
+   penaliza). Descendente = fallo encubierto. */
+function analyzeWeightPattern(setsDone, targetReps){
+  if(!setsDone.length) return { kind:'constant', topSet:null, dropDetected:false };
+  const ws = setsDone.map(s => +s.weight || 0);
+  const first = ws[0], last = ws[ws.length-1];
+  const max = Math.max(...ws), min = Math.min(...ws);
+  let kind = 'constant';
+  if(max === min) kind = 'constant';
+  else {
+    let asc = true, desc = true;
+    for(let i = 1; i < ws.length; i++){
+      if(ws[i] < ws[i-1]) asc = false;
+      if(ws[i] > ws[i-1]) desc = false;
+    }
+    if(asc) kind = 'ascending';
+    else if(desc) kind = 'descending';
+    else kind = 'mixed';
+  }
+  // top set: peso máx entre sets que cumplieron target reps (si target numérico)
+  let topSet = null;
+  const valid = (typeof targetReps === 'number')
+    ? setsDone.filter(s => (+s.reps || 0) >= targetReps)
+    : setsDone;
+  if(valid.length){
+    let best = valid[0];
+    for(const s of valid) if((+s.weight||0) > (+best.weight||0)) best = s;
+    topSet = { weight: +best.weight || 0, reps: +best.reps || 0 };
+  }
+  const dropDetected = kind === 'descending' && first > 0 && (last <= first * 0.9);
+  return { kind, topSet, dropDetected };
+}
+
+/* Decide bump + razón. Reglas (orden importa):
+   1. Skip cardio/noWeight/time
+   2. knee=leve → 0
+   3. knee=dolor + quadHeavy → -step
+   4. drop detectado (descending ≥10%) → 0 "fatiga ceiling"
+   5. ≥2 shortfalls reps → -step
+   6. ningún set done → 0
+   7. allComplete + knee=bien → +step
+   8. 1 shortfall → 0 "margen día malo"
+   9. mixed/parcial → 0 */
+function decideBump(ex, knee, targetReps, pattern){
+  if(ex.isCardio || ex.noWeight) return { bump:0, reason:'cardio/iso' };
+  if(knee === 'leve') return { bump:0, reason:'rodilla leve: no progresa' };
+  if(typeof targetReps !== 'number') return { bump:0, reason:'time-based' };
   const cap = PROG_CAPS[ex.id] || {};
   const step = cap.isolation ? 1.25 : 2.5;
   const done = ex.sets.filter(s => s.done);
-  if(done.length === 0) return 0;
+  if(done.length === 0) return { bump:0, reason:'sin series done' };
+  if(knee === 'dolor' && cap.quadHeavy) return { bump:-step, reason:'dolor: -bump cuádriceps' };
+  if(pattern.dropDetected) return { bump:0, reason:'drop ≥10% intra-sesión: techo fatiga' };
   const shortfalls = done.filter(s => (+s.reps || 0) < targetReps).length;
+  if(shortfalls >= 2) return { bump:-step, reason:`${shortfalls} series < ${targetReps} reps` };
   const allComplete = done.length === ex.sets.length && shortfalls === 0;
-  if(knee === 'dolor' && cap.quadHeavy) return -step;
-  if(allComplete && knee === 'bien') return +step;
-  if(shortfalls >= 2) return -step;
-  return 0;
+  if(allComplete && knee === 'bien'){
+    const variant = pattern.kind === 'ascending' ? ' (pyramid: warm-up integrado)'
+                  : pattern.kind === 'mixed' ? ' (varianza mixta)' : '';
+    return { bump:+step, reason:`completo RIR 2+${variant}` };
+  }
+  if(shortfalls === 1) return { bump:0, reason:'1 short: margen día malo' };
+  return { bump:0, reason:'parcial' };
 }
 
 function applyProgression(session){
@@ -834,23 +889,52 @@ function applyProgression(session){
   for(const ex of session.exercises){
     const planEx = planDay.exercises.find(e => e.id === ex.id);
     const targetReps = planEx && typeof planEx.reps === 'number' ? planEx.reps : null;
-    const bump = decideBump(ex, knee, targetReps);
-    if(bump === 0) continue;
+    const done = ex.sets.filter(s => s.done);
+    const pattern = analyzeWeightPattern(done, targetReps);
+    const { bump, reason } = decideBump(ex, knee, targetReps, pattern);
+    if(bump === 0) {
+      // si user usó peso constante distinto al plan → adoptar sin bump
+      if(pattern.kind === 'constant' && pattern.topSet && planEx
+         && pattern.topSet.weight > 0 && pattern.topSet.weight !== (+planEx.weight||0)){
+        // sin bump, solo sync futuro al peso real del user (si reps cumplieron)
+        if(typeof targetReps !== 'number' || pattern.topSet.reps >= targetReps){
+          const cap = PROG_CAPS[ex.id] || {};
+          const newW = Math.max(2.5, Math.min(cap.max ?? Infinity, pattern.topSet.weight));
+          let applied = false, beforeW = null, afterW = null;
+          for(let wi = w + 1; wi < DB.plan.weeks.length; wi++){
+            const day = DB.plan.weeks[wi]?.[d];
+            const target = day?.exercises.find(e => e.id === ex.id);
+            if(!target || target.isCardio || target.noWeight) continue;
+            const oldW = +target.weight || 0;
+            if(newW === oldW) continue;
+            target.weight = newW;
+            if(!applied){ beforeW = oldW; afterW = newW; applied = true; }
+          }
+          if(applied) changes.push({ id:ex.id, name:ex.name, from:beforeW, to:afterW,
+                                     bump:0, reason:`sync a peso usado (${pattern.topSet.weight}kg)` });
+        }
+      }
+      continue;
+    }
     const cap = PROG_CAPS[ex.id] || {};
-    let applied = false;
-    let beforeW = null, afterW = null;
+    // base = max(topSet, planWeight) → evita bump sobre peso obsoleto del plan
+    const planWeight = planEx ? (+planEx.weight || 0) : 0;
+    const baseW = Math.max(pattern.topSet?.weight || 0, planWeight);
+    let applied = false, beforeW = null, afterW = null;
     for(let wi = w + 1; wi < DB.plan.weeks.length; wi++){
       const day = DB.plan.weeks[wi]?.[d];
       if(!day) continue;
       const target = day.exercises.find(e => e.id === ex.id);
       if(!target || target.isCardio || target.noWeight) continue;
       const oldW = +target.weight || 0;
-      const newW = Math.max(2.5, Math.min(cap.max ?? Infinity, oldW + bump));
+      // bump aplica sobre max(base, oldW) para no bajar pesos posteriores ya escalados
+      const ref = Math.max(baseW, oldW);
+      const newW = Math.max(2.5, Math.min(cap.max ?? Infinity, ref + bump));
       if(newW === oldW) continue;
       target.weight = newW;
       if(!applied){ beforeW = oldW; afterW = newW; applied = true; }
     }
-    if(applied) changes.push({ id: ex.id, name: ex.name, from: beforeW, to: afterW, bump });
+    if(applied) changes.push({ id:ex.id, name:ex.name, from:beforeW, to:afterW, bump, reason });
   }
   if(changes.length) saveDB();
   return changes;
@@ -1558,17 +1642,22 @@ let _progSnapshot = null;
 function showProgressionModal(changes, snapshot){
   _progSnapshot = snapshot;
   const rows = changes.map(c => {
-    const arrow = c.bump > 0 ? '↑' : '↓';
-    const color = c.bump > 0 ? '#7be495' : 'var(--warn)';
-    return `<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--surface2);font-size:13px;">
-      <span>${c.name}</span>
-      <span style="color:${color};font-family:'DM Mono',monospace;">${c.from}→${c.to}kg ${arrow}</span>
+    const arrow = c.bump > 0 ? '↑' : c.bump < 0 ? '↓' : '→';
+    const color = c.bump > 0 ? '#7be495' : c.bump < 0 ? 'var(--warn)' : 'var(--accent)';
+    const delta = c.bump > 0 ? `+${c.bump}` : c.bump < 0 ? `${c.bump}` : 'sync';
+    return `<div style="padding:8px 0;border-bottom:1px solid var(--surface2);font-size:13px;">
+      <div style="display:flex;justify-content:space-between;">
+        <span style="font-weight:600;">${c.name}</span>
+        <span style="color:${color};font-family:'DM Mono',monospace;">${c.from}→${c.to}kg ${arrow}</span>
+      </div>
+      <div style="color:var(--muted);font-size:11px;margin-top:2px;">${delta}kg · ${c.reason}</div>
     </div>`;
   }).join('');
   openModal(`
     <h2 style="font-size:18px;">Progresión aplicada ✓</h2>
     <div class="small" style="color:var(--muted);margin-bottom:10px;">
-      Cambios aplicados al plan desde la próxima ocurrencia de cada ejercicio.
+      Cambios aplicados al plan desde la próxima ocurrencia. Basado en:
+      top-set (peso pesado con reps target), patrón intra-sesión (constante/pyramid/drop), kneeStatus.
     </div>
     <div>${rows}</div>
     <div class="btn-row" style="margin-top:14px;gap:8px;">
