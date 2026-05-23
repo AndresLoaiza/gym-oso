@@ -603,19 +603,24 @@ const HOWTO = {
   'leg_press_45': {
     title: 'Prensa 45° Hammer',
     setup: [
-      'Pies <b>altos y anchos</b> en plataforma (favorece glúteo, descarga rodilla).',
-      'Puntas de pies ligeramente hacia afuera (rotación externa → activa VMO).',
-      'Espalda baja pegada al respaldo. Caderas no se despegan.'
+      '<b>PIES ARRIBA</b> (zona alta de la plataforma) — NO la zona baja. Si tu plataforma tiene dos áreas marcadas, usa siempre la <b>SUPERIOR</b>.',
+      'Pies <b>anchos</b> (ancho hombros o más). Puntas ligeramente afuera (rotación externa activa VMO).',
+      'Espalda baja pegada al respaldo. Caderas no se despegan al bajar.',
+      'Talones firmes contra plataforma. Empuje viene del talón, no la punta.'
     ],
     cfg: [
-      'ROM parcial: bajar hasta <b>90° rodilla MÁX</b> (muslo paralelo a plataforma).',
-      'Empuja con talón, no con punta.',
-      'Excéntrica controlada 2-3s. No rebotes.'
+      'ROM parcial: bajar hasta <b>90° rodilla MÁX</b> (muslo paralelo a plataforma). Si rodilla baja más → estás bajando demasiado.',
+      'Tempo 3·1·2·0: bajar 3s controlado · pausa 1s · subir 2s · sin pausa arriba.',
+      'No bloquear rodillas arriba (mantiene tensión + protege articulación).',
+      'No rebotes en el fondo.'
     ],
     pfps: [
+      '<b>Pies altos = -30% stress patelofemoral</b> vs pies bajos (Escamilla 2001 EMG). Crítico PFPS.',
+      'Pies bajos = más cuádriceps pero más cizalla rotuliana → contraindicado tu caso.',
       'NUNCA pasar 90° flexión bajo carga.',
-      'Si rodillas se van hacia adentro → bajar peso, empujar afuera.',
-      'Dolor rotuliano en empuje → revisar pies más altos.'
+      'Si rodillas se van hacia adentro (valgo) → bajar peso, empujar afuera, revisar puntas más afuera.',
+      'Dolor rotuliano al empujar → subir pies aún más, reducir ROM, bajar peso.',
+      'Tu cuádriceps ya trabaja en jack squat + leg ext arco corto — aquí prioriza glúteo + isquio (cadena posterior = trekking ascenso).'
     ]
   },
   'leg_ext': {
@@ -1464,10 +1469,10 @@ function generateLocalPlan(){
     const vmoSets = ph==='taper' ? 3 : 4;
     return {
       focus: 'Pierna · Cuádriceps',
-      notes: 'Pies altos en prensa. ROM parcial (no pasar 90°). Calentar 5 min bici.',
+      notes: 'Prensa: PIES ARRIBA (zona alta plataforma, NO la baja) + anchos. ROM parcial (no pasar 90°). Calentar 5 min bici.',
       exercises: [
         { id:'stairmaster', name:'StairMaster (calentamiento)', sets:1, reps:'8 min', rest:0, isCardio:true },
-        { id:'leg_press_45', name:'Prensa 45° (pies altos)', ...prensa, note:`Compuesto principal multi-joint. ${prensa.sets} sets (ACSM compounds). RIR 2.` },
+        { id:'leg_press_45', name:'Prensa 45° (pies ARRIBA + anchos)', ...prensa, note:`Compuesto principal multi-joint. ${prensa.sets} sets (ACSM compounds). RIR 2.` },
         { id:'leg_ext', name:'Extensión cuádriceps (últimos 30°)', sets: ph==='adapt'?2:3, reps:15, weight:wLeg(0.18), rest:60, note:'Aislamiento PFPS-sensible: 2-3 sets máx. Solo arco corto. Dolor → omitir.' },
         { id:'prone_leg_curl', name:'Prone Leg Curl', sets:3, reps:10, weight:wLeg(0.32), rest:75, note:'Aislamiento isquio: 3 sets. Balance H:Q para protección rotuliana.' },
         { id:'pantorrilla_sentado', name:'Pantorrilla sentado (sóleo)', sets:soleoSets, reps:15, weight:wLeg(0.55), rest:60, note:`Sóleo: ${soleoSets} sets (fibra tipo I, alto volumen). Crítico descenso montaña.` },
