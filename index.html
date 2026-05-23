@@ -392,7 +392,7 @@ const CATALOGO = [
   { id:'stairmaster', img:'IMG_6110', name:'StairMaster (escaladora)', muscle:'Cuádriceps · Glúteo · Cardio', isCardio:true, safety:'safe', knee:'caution', note:'Progresivo. Empieza 10 min nivel 4-6. Trekking-specific.' },
   { id:'trotadora', img:'IMG_6111', name:'Trotadora', muscle:'Cardio · Tren inferior', isCardio:true, safety:'safe', knee:'caution', note:'Mejor caminar con inclinación 8-12% que correr. Menos impacto en rótula.' },
   { id:'pantorrilla_sentado', img:'IMG_6112', name:'Banco pantorrilla sentado', muscle:'Gemelos · Sóleo', safety:'safe', knee:'safe', priority:'alta', note:'Importante para trekking: sóleo carga descenso de montaña.' },
-  { id:'jaula_crossover', img:'IMG_6113', name:'Jaula Crossover multifuncional', muscle:'Todo el cuerpo', safety:'safe', knee:'safe' },
+  { id:'peso_muerto', img:'IMG_6113', name:'Jaula de potencia (peso muerto + sentadilla con barra)', muscle:'Cadena posterior + cuádriceps + glúteo · core', safety:'safe', knee:'caution', priority:'alta', note:'Multiuso. Para PFPS: usar PESO MUERTO RUMANO (hip hinge, rodillas suaves) o SENTADILLA con ROM parcial (no pasar 90°, pies altos). Evitar peso muerto convencional + sentadilla profunda.' },
   { id:'hiper_inversa', img:'IMG_6114', name:'Hiperextensión inversa (carga con discos)', muscle:'Glúteo · Isquios · Espalda baja', safety:'safe', knee:'safe', priority:'alta', note:'PFPS-friendly: cadena posterior sin estresar rótula.' },
   { id:'sentadilla_hack', img:'IMG_6115', name:'Sentadilla en máquina (Hack Squat)', muscle:'Cuádriceps · Glúteo', safety:'safe', knee:'caution', priority:'alta', note:'PFPS: ROM parcial. No bajar más de 90°. Pies altos y anchos en plataforma.' },
   { id:'adductor_abductor', img:'IMG_6116', name:'Aductor / Abductor (MoviFit)', muscle:'Aductores · Abductores', safety:'safe', knee:'safe', priority:'alta', note:'PFPS-friendly: abductor fortalece glúteo medio + vasto medial oblicuo, clave para alineación de rótula.' },
@@ -534,6 +534,11 @@ const TEMPO = {
   hiper_inversa: { ecc:2, pBot:0, conc:1, pTop:1, label:'2·0·1·1',
     short:'Subir piernas 1s · pausa 1s apretar glúteo · bajar 2s',
     why:'Pausa peak glúteo = activación máxima cadena posterior trekking-specific. No hiperextender lumbar — paralelo al piso es el tope.' },
+
+  // Peso muerto rumano (PFPS-friendly variant)
+  peso_muerto: { ecc:3, pBot:1, conc:1, pTop:0, label:'3·1·1·0',
+    short:'Bajar 3s (hip hinge controlado) · pausa 1s estiramiento isquio · subir 1s con drive de glúteo',
+    why:'Romanian Deadlift (RDL): hip-hinge isquios + glúteo dominante (Schoenfeld 2010, McAllister 2014 EMG). Bajada lenta estira isquio bajo tensión = mayor adaptación + protección desgarro descenso trekking (LaStayo 2003). Pausa stretch = pico fuerza isquio. PFPS-friendly por NO requerir flexión profunda rodilla. Crítico para cadena posterior ascenso montaña.' },
 
   // Cardio (sin tempo aplicable)
   stairmaster: { cadence:true, label:'Cadencia 50-60 pasos/min',
@@ -811,6 +816,39 @@ const HOWTO = {
     ],
     pfps: ['No afecta rodilla.']
   },
+  'peso_muerto': {
+    title: 'Jaula potencia (RDL + Sentadilla barra)',
+    setup: [
+      'Barra cargada en jaula o piso. Empezar barra vacía (20kg) si nunca lo has hecho.',
+      '<b>Para RDL (peso muerto rumano):</b> barra en piso o pins bajos.',
+      '<b>Para sentadilla:</b> barra en pins altura hombros, salir caminando atrás 2 pasos, seguros laterales puestos.',
+      'Espalda neutra siempre, core activo, mirada al frente.'
+    ],
+    cfg: [
+      '<b>━━ RDL (cadena posterior trekking ascenso) ━━</b>',
+      'Agarre ancho hombros, pies ancho cadera, rodillas suaves ~15° fijas.',
+      '<b>Hip hinge:</b> caderas atrás (NO doblar rodillas) hasta estiramiento isquio (barra a media tibia).',
+      'Subir empujando caderas adelante, apretar glúteo arriba. 3-4 sets × 8-10 reps.',
+      'Tempo: 3·1·1·0 (bajar 3s · pausa 1s estiramiento · subir 1s drive glúteo).',
+      'Carga inicial 30-40kg, progresar +2.5kg si RIR 2+.',
+      '',
+      '<b>━━ Sentadilla con barra (variante alternativa a prensa) ━━</b>',
+      'Barra en trapecios altos (high-bar), pies ancho hombros, puntas ligeramente afuera.',
+      '<b>ROM parcial:</b> bajar hasta 90° rodilla MÁX (muslo paralelo). NO sentadilla profunda.',
+      'Rodillas siguen línea de los pies (no entran adentro).',
+      'Tempo: 3·1·2·0 igual que prensa (eccentric overload).',
+      'Carga inicial 30-40kg, progresión conservadora. Spotter o seguros SIEMPRE.',
+      '3-5 sets × 6-12 reps según fase.'
+    ],
+    pfps: [
+      '<b>RDL:</b> rodillas casi fijas (no convencional). Si pasan >30° flexión → estás haciendo convencional → para.',
+      '<b>Sentadilla:</b> NO bajar de 90°. Si rodillas duelen al subir → reducir profundidad o reemplazar por prensa.',
+      'Espalda baja redondeada = peligro lumbar (ambas variantes) — bajar peso.',
+      'Sentadilla high-bar más PFPS-friendly que low-bar (menos forward lean).',
+      'Si dolor rodilla >3/10 → omitir sentadilla, hacer solo RDL.',
+      'Trekking-specific: RDL = cadena posterior ascenso · Sentadilla = cuádriceps + glúteo para subida con peso.'
+    ]
+  },
   'adductor_abductor': {
     title: 'Abductor (foco VMO)',
     setup: [
@@ -899,6 +937,7 @@ const OBJECTIVE = {
 const EX_TYPE = {
   leg_press_45:'strength', banco_plano:'strength', remo_isolateral:'strength',
   pulldown:'strength', press_hombros_107:'strength', jack_squat:'strength',
+  peso_muerto:'posterior',  // RDL = hip-hinge cadena posterior trekking ascenso
   pantorrilla_sentado:'endurance', mancuernas:'endurance',
   hiper_inversa:'posterior', prone_leg_curl:'posterior',
   leg_ext:'pfps', crossover:'pfps', adductor_abductor:'pfps',
