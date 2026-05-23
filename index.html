@@ -904,7 +904,7 @@ function imgFor(id){ return IMGS[id] || ''; }
 function thumb(id, cls='sm'){
   const src = imgFor(id);
   if(!src) return `<div class="thumb ${cls}" style="display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:18px;">?</div>`;
-  return `<img class="thumb ${cls}" src="${src}" alt="" onclick="openImg('${id}')">`;
+  return `<img class="thumb ${cls}" src="${src}" alt="" onclick="event.stopPropagation();openImg('${id}')">`;
 }
 function openImg(id){
   const src = imgFor(id);
@@ -1836,8 +1836,8 @@ function renderRutinaInner(ns, td){
     const allDone = ex.sets.length > 0 && ex.sets.every(s => s.done);
     const doneCount = ex.sets.filter(s => s.done).length;
     const summaryChip = allDone
-      ? `<span class="chip" style="background:rgba(123,228,149,0.18);color:#7be495;">✓ ${doneCount}/${ex.sets.length} completo</span>`
-      : `<span class="chip" style="color:var(--muted);">${doneCount}/${ex.sets.length}</span>`;
+      ? `<span class="chip ex-summary-chip" style="background:rgba(123,228,149,0.18);color:#7be495;">✓ ${doneCount}/${ex.sets.length} completo</span>`
+      : `<span class="chip ex-summary-chip" style="color:var(--muted);">${doneCount}/${ex.sets.length}</span>`;
     const collapseHint = _collapsedEx.has(idx) ? '▸ expandir' : '▾ ocultar';
     const restSec = ex.rest ?? 90;
     const restLabel = restSec >= 60 ? `${Math.floor(restSec/60)}:${String(restSec%60).padStart(2,'0')}` : `${restSec}s`;
@@ -1873,18 +1873,27 @@ function renderRutinaInner(ns, td){
 
   // listeners
   list.querySelectorAll('[data-act]').forEach(b => {
-    b.addEventListener('click', () => {
+    b.addEventListener('click', (e) => {
+      // Guard event bubbling: si click originó en data-act más interno → dejarlo manejar
+      const inner = e.target.closest('[data-act]');
+      if(inner && inner !== b) return;
       const i = b.dataset.i;
       if(b.dataset.act === 'toggle-collapse'){
-        if(_collapsedEx.has(i)){
-          _collapsedEx.delete(i);
-          _userExpanded.add(i);  // marca: user no quiere auto-colapsar
-        } else {
+        const card = list.querySelector(`.card[data-ex-idx="${i}"]`);
+        if(!card) return;
+        const willCollapse = !card.classList.contains('collapsed');
+        if(willCollapse){
           _collapsedEx.add(i);
           _userExpanded.delete(i);
+          card.classList.add('collapsed');
+        } else {
+          _collapsedEx.delete(i);
+          _userExpanded.add(i);
+          card.classList.remove('collapsed');
         }
-        track('ex_collapse_toggle', { exId: DB.sessionSets[i].id, idx: i, collapsed: _collapsedEx.has(i) });
-        renderRutina();
+        const hint = card.querySelector('.ex-collapse-hint');
+        if(hint) hint.textContent = willCollapse ? '▸ expandir' : '▾ ocultar';
+        track('ex_collapse_toggle', { exId: DB.sessionSets[i].id, idx: i, collapsed: willCollapse });
         return;
       }
       if(b.dataset.act === 'add-set'){
@@ -1967,11 +1976,23 @@ function renderSets(i){
       saveDB(); updateProgress();
       // Auto-colapsar si todos los sets quedan done + user no expandió manualmente
       const allDone = ex.sets.length > 0 && ex.sets.every(x => x.done);
-      if(allDone && !_userExpanded.has(String(i))){
-        _collapsedEx.add(String(i));
-        // re-render solo si necesario (delay corto para que se vea el ✓ verde)
+      const iKey = String(i);
+      if(allDone && !_userExpanded.has(iKey)){
+        _collapsedEx.add(iKey);
         setTimeout(() => {
-          renderRutina();
+          const card = document.querySelector(`#rutina-list .card[data-ex-idx="${iKey}"]`);
+          if(card){
+            card.classList.add('collapsed');
+            const hint = card.querySelector('.ex-collapse-hint');
+            if(hint) hint.textContent = '▸ expandir';
+            // actualizar summary chip done count + color
+            const sum = card.querySelector('.ex-summary-chip');
+            if(sum){
+              sum.textContent = `✓ ${ex.sets.filter(x=>x.done).length}/${ex.sets.length} completo`;
+              sum.style.background = 'rgba(123,228,149,0.18)';
+              sum.style.color = '#7be495';
+            }
+          }
           // scroll a próximo ej no colapsado
           const cards = document.querySelectorAll('#rutina-list .card');
           for(const c of cards){
