@@ -383,7 +383,7 @@ const CATALOGO = [
   { id:'banco_declinado', img:'IMG_6101', name:'Banco declinado con barra', muscle:'Pecho bajo · Tríceps', safety:'safe', knee:'safe' },
   { id:'banco_plano', img:'IMG_6102', name:'Banco plano (press con barra)', muscle:'Pecho · Tríceps · Hombro', safety:'safe', knee:'safe' },
   { id:'press_hombros_pl', img:'IMG_6103', name:'Press hombros plate-loaded', muscle:'Deltoide · Tríceps', safety:'safe', knee:'safe' },
-  { id:'remo_isolateral', img:'IMG_6104', name:'Remo Iso-Lateral a disco', muscle:'Espalda · Bíceps', safety:'safe', knee:'safe' },
+  { id:'remo_isolateral', img:'IMG_6104', name:'Remo Iso-Lateral a disco', muscle:'Espalda · Bíceps', safety:'safe', knee:'safe', unilateral:true },
   { id:'tirador_largo', img:'IMG_6105', name:'Tirador largo', muscle:'Espalda · Bíceps', safety:'safe', knee:'safe' },
   { id:'pulldown', img:'IMG_6106', name:'Pulldown (polea alta)', muscle:'Dorsal · Bíceps', safety:'safe', knee:'safe' },
   { id:'press_hombros_107', img:'IMG_6107', name:'Press de hombros con discos', muscle:'Deltoide · Tríceps', safety:'safe', knee:'safe' },
@@ -399,9 +399,9 @@ const CATALOGO = [
   { id:'jack_squat', img:'IMG_6117', name:'Jack Squat combinada', muscle:'Cuádriceps · Glúteo', safety:'safe', knee:'caution', note:'PFPS: ROM parcial. No bajar más de 90°.' },
   { id:'leg_press_45', img:'IMG_6118', name:'Prensa de pierna 45° (Hammer)', muscle:'Cuádriceps · Glúteo', safety:'safe', knee:'caution', priority:'alta', note:'PFPS: pies ALTOS y anchos en plataforma. ROM parcial (no bajar profundo).' },
   { id:'rack_barras', img:'IMG_6119', name:'Rack de barras + caja pliométrica', muscle:'Almacenamiento + box step', safety:'safe', knee:'caution', note:'Box step bajo OK. Evitar box jumps por PFPS.' },
-  { id:'crossover', img:'IMG_6120', name:'Polea cruzada / Functional Trainer', muscle:'Todo el cuerpo', safety:'safe', knee:'safe', note:'Versátil. Ideal abducción de cadera para vasto medial.' },
+  { id:'crossover', img:'IMG_6120', name:'Polea cruzada / Functional Trainer', muscle:'Todo el cuerpo', safety:'safe', knee:'safe', unilateral:true, note:'Versátil. Ideal abducción de cadera para vasto medial. Unilateral: ejecutar serie completa por pierna.' },
   { id:'rack_ez', img:'IMG_6122', name:'Rack barras Z / EZ', muscle:'Bíceps · Tríceps · Hombros', safety:'safe', knee:'safe' },
-  { id:'mancuernas', img:'IMG_6123', name:'Mancuernas hexagonales', muscle:'Todo el cuerpo', safety:'safe', knee:'safe', note:'Set completo. Bulgarian split squat, peso muerto rumano, etc.' },
+  { id:'mancuernas', img:'IMG_6123', name:'Mancuernas hexagonales', muscle:'Todo el cuerpo', safety:'safe', knee:'safe', unilateral:true, note:'Set completo. Step-up unilateral (por pierna), bulgarian split squat, peso muerto rumano, etc.' },
   { id:'prone_leg_curl', img:'IMG_6124', name:'Prone Leg Curl (femoral acostado)', muscle:'Isquiotibiales', safety:'safe', knee:'safe', priority:'alta', note:'PFPS-friendly: balance cuádriceps/femoral, clave para estabilidad rodilla.' },
   { id:'leg_ext', img:'IMG_6125', name:'Extensión de cuádriceps (Leg Extension)', muscle:'Cuádriceps (vasto)', safety:'safe', knee:'avoid', priority:'alta', note:'⚠️ PFPS: usar SOLO en últimos 30° de extensión (rango corto). Carga baja. Si dolor → omitir.' }
 ];
@@ -945,6 +945,10 @@ const EX_TYPE = {
 };
 
 function phaseOfWeek(w){ return w<2 ? 'adapt' : w<5 ? 'str' : w<7 ? 'end' : 'taper'; }
+function isUnilateral(exId){
+  const entry = CATALOGO.find(c => c.id === exId);
+  return !!(entry && entry.unilateral);
+}
 function windowOf(exId, ph){
   const t = EX_TYPE[exId];
   if(!t || !OBJECTIVE.windows[t]?.[ph]) return null;
@@ -960,6 +964,8 @@ function tagPlanWithWindows(){
     const ph = phaseOfWeek(w);
     for(const day of DB.plan.weeks[w] || []){
       for(const ex of day.exercises || []){
+        // Unilateral tag (aplica también a cardio/iso si corresponde)
+        if(isUnilateral(ex.id)) ex.unilateral = true;
         if(ex.isCardio || ex.noWeight) continue;
         const win = windowOf(ex.id, ph);
         if(win){
@@ -1041,30 +1047,28 @@ const PROG_CAPS = {
 };
 
 /* Analiza patrón de pesos entre sets done. Devuelve:
-   - kind: 'constant' | 'ascending' | 'descending' | 'mixed'
+   - kind: 'constant' | 'ascending' | 'descending' | 'mixed' | 'unilateral'
    - topSet: { weight, reps } de la serie pesada que cumplió target reps
    - dropDetected: bool (descending ≥10% intra-sesión = fatiga ceiling)
    Evidencia: top-set assessment (Helms RP), velocity loss / drop interpretation
    (González-Badillo). Varianza ascendente = warm-up implícito (Mangine 2018, no
-   penaliza). Descendente = fallo encubierto. */
-function analyzeWeightPattern(setsDone, targetReps){
+   penaliza). Descendente = fallo encubierto.
+   Unilateral (lados L/R): analiza cada lado por separado para evitar
+   falso-positivo de "drop" cuando lado débil naturalmente usa menos peso. */
+function _patternRaw(setsDone, targetReps){
   if(!setsDone.length) return { kind:'constant', topSet:null, dropDetected:false };
   const ws = setsDone.map(s => +s.weight || 0);
   const first = ws[0], last = ws[ws.length-1];
   const max = Math.max(...ws), min = Math.min(...ws);
   let kind = 'constant';
-  if(max === min) kind = 'constant';
-  else {
+  if(max !== min){
     let asc = true, desc = true;
     for(let i = 1; i < ws.length; i++){
       if(ws[i] < ws[i-1]) asc = false;
       if(ws[i] > ws[i-1]) desc = false;
     }
-    if(asc) kind = 'ascending';
-    else if(desc) kind = 'descending';
-    else kind = 'mixed';
+    kind = asc ? 'ascending' : desc ? 'descending' : 'mixed';
   }
-  // top set: peso máx entre sets que cumplieron target reps (si target numérico)
   let topSet = null;
   const valid = (typeof targetReps === 'number')
     ? setsDone.filter(s => (+s.reps || 0) >= targetReps)
@@ -1076,6 +1080,19 @@ function analyzeWeightPattern(setsDone, targetReps){
   }
   const dropDetected = kind === 'descending' && first > 0 && (last <= first * 0.9);
   return { kind, topSet, dropDetected };
+}
+function analyzeWeightPattern(setsDone, targetReps){
+  const hasSide = setsDone.some(s => s.side);
+  if(!hasSide) return _patternRaw(setsDone, targetReps);
+  // Unilateral: analizar L y R por separado
+  const pL = _patternRaw(setsDone.filter(s => s.side === 'L'), targetReps);
+  const pR = _patternRaw(setsDone.filter(s => s.side === 'R'), targetReps);
+  let topSet = null;
+  if(pL.topSet && pR.topSet) topSet = pL.topSet.weight >= pR.topSet.weight ? pL.topSet : pR.topSet;
+  else topSet = pL.topSet || pR.topSet;
+  // Drop solo si AMBOS lados dropearon (lado débil naturalmente menor ≠ fatiga)
+  const dropDetected = pL.dropDetected && pR.dropDetected;
+  return { kind:'unilateral', topSet, dropDetected, sides:{L:pL, R:pR} };
 }
 
 /* Decide progresión: devuelve { weightBump, repBump, reason }.
@@ -1446,7 +1463,7 @@ function generateLocalPlan(){
         { id:'leg_ext', name:'Extensión cuádriceps (últimos 30°)', sets: ph==='adapt'?2:3, reps:15, weight:wLeg(0.18), rest:60, note:'Aislamiento PFPS-sensible: 2-3 sets máx. Solo arco corto. Dolor → omitir.' },
         { id:'prone_leg_curl', name:'Prone Leg Curl', sets:3, reps:10, weight:wLeg(0.32), rest:75, note:'Aislamiento isquio: 3 sets. Balance H:Q para protección rotuliana.' },
         { id:'pantorrilla_sentado', name:'Pantorrilla sentado (sóleo)', sets:soleoSets, reps:15, weight:wLeg(0.55), rest:60, note:`Sóleo: ${soleoSets} sets (fibra tipo I, alto volumen). Crítico descenso montaña.` },
-        { id:'crossover', name:'Abducción cadera en polea', sets:vmoSets, reps:15, weight:10, rest:45, note:`VMO + glúteo medio: ${vmoSets} sets (prioridad PFPS endurance). Carga baja standalone.` },
+        { id:'crossover', name:'Abducción cadera en polea', sets:vmoSets, reps:15, weight:10, rest:45, unilateral:true, note:`UNILATERAL: ${vmoSets} sets × 15 reps POR PIERNA. VMO + glúteo medio (prioridad PFPS endurance). Hacer todas las series de un lado, luego cambiar.` },
         { id:'_wall_sit', name:'Sentadilla a pared (isométrico)', sets:wallSets, reps:wallHold, noWeight:true, rest:60, note:`Isométrico: ${wallSets} holds. 60-90° rodilla.` }
       ]
     };
@@ -1474,7 +1491,7 @@ function generateLocalPlan(){
         const pullPct  = ph==='adapt' ? 0.65 : ph==='str' ? 0.80 : ph==='end' ? 0.60 : 0.70;
         return [
           { id:'banco_plano', name:'Press de banca', ...comp, weight:wBench(benchPct), note:`Compuesto principal empuje: ${comp.sets} sets @ ${Math.round(benchPct*100)}% 1RM.` },
-          { id:'remo_isolateral', name:'Remo Iso-Lateral', sets:comp.sets, reps:comp.reps+2, rest:comp.rest, weight:wBench(0.90*benchPct), note:`Compuesto tracción: ${comp.sets} sets. ≈90% carga banca.` },
+          { id:'remo_isolateral', name:'Remo Iso-Lateral', sets:comp.sets, reps:comp.reps+2, rest:comp.rest, weight:wBench(0.90*benchPct), unilateral:true, note:`UNILATERAL: ${comp.sets} sets × ${comp.reps+2} reps POR BRAZO. Compuesto tracción ≈90% carga banca. Hacer todas las series de un lado, luego cambiar.` },
           { id:'press_hombros_107', name:'Press de hombros', sets:ohpSets, reps:10, weight:wBench(0.62), rest:90, note:`Compuesto secundario: ${ohpSets} sets. ≈62% banca (NSCA ratio).` },
           { id:'pulldown', name:'Pulldown (polea alta)', sets:pdSets, reps:10, weight:wPull(pullPct), rest:75, note:`Tracción vertical: ${pdSets} sets @ ${Math.round(pullPct*100)}% 1RM pulldown.` },
           { id:'camber_curl', name:'Curl bíceps Camber', sets:curlSets, reps:12, weight:wBench(0.30), rest:60, note:`Aislamiento pequeño: ${curlSets} sets. ≈30% banca.` }
@@ -1498,9 +1515,9 @@ function generateLocalPlan(){
         { id:'stairmaster', name:'StairMaster constante', sets:1, reps:`${10+week} min`, rest:0, isCardio:true, note:'Nivel progresivo.' },
         { id:'jack_squat', name:'Jack Squat (ROM parcial)', ...jack, weight:wLeg(0.50), note:`Compuesto pierna: ${jack.sets} sets. ≈50% prensa (más glúteo). ROM parcial.` },
         { id:'adductor_abductor', name:'Abductor (foco VMO)', sets:4, reps:15, weight:wLeg(0.25), rest:45, note:'VMO + glúteo medio: 4 sets ≈25% prensa (prioridad PFPS).' },
-        { id:'mancuernas', name:'Step-up con mancuernas (banco bajo)', sets:stepSets, reps:10, weight:Math.min(15, Math.max(5, Math.round(rmBench*0.12/2.5)*2.5)), rest:75, note:`Compuesto unilateral trekking-specific: ${stepSets} sets/pierna. Mancuerna ≈12% banca.` },
+        { id:'mancuernas', name:'Step-up con mancuernas (banco bajo)', sets:stepSets, reps:10, weight:Math.min(15, Math.max(5, Math.round(rmBench*0.12/2.5)*2.5)), rest:75, unilateral:true, note:`UNILATERAL trekking-specific: ${stepSets} sets × 10 reps POR PIERNA. Mancuerna ≈12% banca.` },
         { id:'hiper_inversa', name:'Hiperextensión inversa', sets:3, reps:12, weight:wLeg(0.15), rest:60, note:'Cadena posterior: 3 sets. Sin estrés rotuliano.' },
-        { id:'crossover', name:'Glute kickback en polea', sets:kickSets, reps:12, weight:10, rest:45, note:`Aislamiento glúteo mayor: ${kickSets} sets. Carga baja standalone.` }
+        { id:'crossover', name:'Glute kickback en polea', sets:kickSets, reps:12, weight:10, rest:45, unilateral:true, note:`UNILATERAL: ${kickSets} sets × 12 reps POR PIERNA. Aislamiento glúteo mayor. Carga baja standalone.` }
       ]
     };
   };
@@ -1754,10 +1771,20 @@ function renderRutina(){
       td.exercises.forEach((ex, idx) => {
         const isTime = typeof ex.reps === 'string' && /s$|min/.test(ex.reps);
         const noW = ex.noWeight || (isTime && !ex.weight) || ex.id === '_wall_sit';
+        // Unilateral: doblar sets, todos L primero luego R (orden gym estándar)
+        const uni = !!(ex.unilateral || isUnilateral(ex.id));
+        const baseSets = ex.sets || 1;
+        const sets = uni && !ex.isCardio
+          ? [
+              ...Array.from({length: baseSets}, () => ({ reps: ex.reps, weight: ex.weight || 0, done: false, side: 'L' })),
+              ...Array.from({length: baseSets}, () => ({ reps: ex.reps, weight: ex.weight || 0, done: false, side: 'R' }))
+            ]
+          : Array.from({length: baseSets}, () => ({ reps: ex.reps, weight: ex.weight || 0, done: false }));
         DB.sessionSets[idx] = { id: ex.id, name: ex.name,
           isCardio: ex.isCardio || false, noWeight: noW,
+          unilateral: uni,
           rest: ex.rest ?? 90,
-          sets: Array.from({length: ex.sets}, () => ({ reps: ex.reps, weight: ex.weight || 0, done: false })),
+          sets,
           note: ex.note || '' };
       });
       // Iniciar sessionId telemetría
@@ -1795,6 +1822,8 @@ function renderRutinaInner(ns, td){
     const restChip = restSec > 0 ? `<span class="chip">⏱ Descanso: ${restLabel}</span>` : '';
     const t = TEMPO[ex.id];
     const tempoChip = t ? `<span class="chip" title="${(t.short||'').replace(/"/g,'&quot;')}" style="background:rgba(196,167,255,0.15);color:var(--accent);cursor:pointer;" data-act="howto" data-id="${ex.id}">⏱ Tempo: ${t.label}</span>` : '';
+    const baseSets = ex.unilateral ? Math.floor(ex.sets.filter(s=>!s.userAdded).length/2) || ex.sets.length/2 : ex.sets.length;
+    const uniChip = ex.unilateral ? `<span class="chip" style="background:rgba(255,107,53,0.15);color:var(--accent2);">🦵 Unilateral: ${baseSets}×${ex.sets[0]?.reps || ''} POR LADO (L primero, R después)</span>` : '';
     const hideW = ex.isCardio || ex.noWeight;
     const isTimeRowsHeader = ex.sets.some(s => typeof s.reps === 'string' && /s$|min/.test(s.reps));
     const timeOnly = hideW && (ex.isCardio || ex.noWeight || isTimeRowsHeader);
@@ -1804,7 +1833,7 @@ function renderRutinaInner(ns, td){
       : `<div class="n">#</div><div class="set-lbl">${ex.isCardio?'Tiempo':'Reps'}</div><div class="set-lbl">${wHeader}</div><div class="set-lbl">✓</div>`;
     const hasHowto = !!HOWTO[ex.id];
     const howtoBtn = hasHowto ? `<button class="btn small" data-act="howto" data-id="${ex.id}" style="flex:0 0 auto;">ℹ Cómo usar</button>` : '';
-    div.innerHTML = `<div class="row-with-thumb">${thumb(ex.id,'md')}<div class="grow"><h3>${ex.name}</h3><div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px;">${restChip}${tempoChip}</div></div></div>
+    div.innerHTML = `<div class="row-with-thumb">${thumb(ex.id,'md')}<div class="grow"><h3>${ex.name}</h3><div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px;">${restChip}${tempoChip}${uniChip}</div></div></div>
       ${howtoBtn ? `<div style="margin:6px 0 4px;">${howtoBtn}</div>` : ''}
       ${ex.note ? `<div class="pfps-warn">${ex.note}</div>` : ''}
       <div class="set-row set-header${timeOnly?' time-only':''}">${headerCells}</div>
@@ -1856,12 +1885,19 @@ function renderSets(i){
     const repsVal = needsFill ? repsTpl : s.reps;
     if(needsFill && repsTpl) { s.reps = repsVal; saveDB(); }
     row.className = 'set-row' + (s.userAdded ? ' with-del' : '') + (timeOnly ? ' time-only' : '');
+    // Numerar por lado si unilateral: L1, L2, ... luego R1, R2, ...
+    let nLabel = j+1;
+    if(s.side){
+      const sameSidePrior = ex.sets.slice(0, j).filter(x => x.side === s.side).length;
+      const sideColor = s.side === 'L' ? 'var(--accent)' : 'var(--accent2)';
+      nLabel = `<span style="color:${sideColor};font-weight:700;">${s.side}${sameSidePrior+1}</span>`;
+    }
     const cells = timeOnly
-      ? `<div class="n">${j+1}</div>
+      ? `<div class="n">${nLabel}</div>
          <input type="text" inputmode="text" value="${repsVal}" placeholder="tiempo">
          <button class="check ${s.done?'done':''}">${s.done?'✓':'○'}</button>
          ${s.userAdded ? '<button class="del" title="Borrar serie">🗑</button>' : ''}`
-      : `<div class="n">${j+1}</div>
+      : `<div class="n">${nLabel}</div>
          <input type="${textReps?'text':'number'}" inputmode="${textReps?'text':'decimal'}" value="${repsVal}" placeholder="${textReps?'tiempo':'reps'}">
          ${weightCell}
          <button class="check ${s.done?'done':''}">${s.done?'✓':'○'}</button>
@@ -1889,7 +1925,7 @@ function renderSets(i){
       s.done = !s.done;
       btn.className = 'check ' + (s.done ? 'done' : '');
       btn.textContent = s.done ? '✓' : '○';
-      track('set_check', { exId: ex.id, idx: j, done: s.done, reps: s.reps, weight: s.weight });
+      track('set_check', { exId: ex.id, idx: j, done: s.done, reps: s.reps, weight: s.weight, side: s.side });
       if(s.done && !ex.isCardio) { startTimer(ex.rest ?? 90, 'serie'); if(navigator.vibrate) navigator.vibrate(50); }
       saveDB(); updateProgress();
     });

@@ -244,8 +244,28 @@ Devuelve `{ weightBump, repBump, reason }`. Orden:
 - `ascending` (pyramid up): warm-up implícito (Mangine 2018) → bump normal usando top set
 - `descending`: si `last <= first × 0.9` → `dropDetected=true` (fatiga ceiling)
 - `mixed`: bump normal flagueado en modal
+- `unilateral`: lados L/R analizados por separado (`_patternRaw`). dropDetected solo si AMBOS lados drop ≥10% (lado débil naturalmente menor peso ≠ fatiga). topSet = max peso entre ambos lados.
 
 `topSet`: serie con max peso que cumplió `targetReps` (Helms RP top-set assessment).
+
+### Ejercicios unilaterales
+Flag `unilateral:true` en CATALOGO + plan generator + ex objects. Helper `isUnilateral(exId)` lee CATALOGO.
+
+**Ejercicios marcados unilaterales:**
+- `crossover` (abducción cadera + glute kickback)
+- `mancuernas` (step-up)
+- `remo_isolateral`
+
+**SessionSets creation:** si `ex.unilateral`, duplica sets con tag `side: 'L'` o `'R'`. Orden: todas las L primero, luego todas las R (estándar gym: cambias de lado una vez, no entre sets).
+
+**UI:**
+- Chip header card: `🦵 Unilateral: N×Y reps POR LADO (L primero, R después)`
+- Badge por set row: `L1, L2, ... R1, R2, ...` con colores distintos (L=accent lila, R=accent2 naranja)
+- Plan notes explicitan "POR PIERNA" / "POR BRAZO"
+
+**Telemetría:** `set_check` incluye `side`.
+
+**Auto-progresión:** funciona naturalmente con sets duplicados — `done.length === ex.sets.length` espera 2N completos, shortfalls cuenta cualquier lado. Patrón unilateral evita falso-positivo drop por asimetría.
 
 ### Aplicación (`applyProgression`)
 - **Weight bump**: a todas las semanas futuras del mismo `(d, ex.id)` con mismo `phase` (no cruza fases — strength vs endurance tienen %1RM distintos)
