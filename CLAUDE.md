@@ -120,6 +120,7 @@ App web móvil PWA de entrenamiento para **Andrés "El Oso" Loaiza** (Medellín)
   - 🎯 Configuración (ROM, cargas progresión por semana)
   - 🦵 Reglas PFPS (ángulos seguros, alineación rodilla-pie, dolor-stop)
 - **Chip tempo en card** del ejercicio durante sesión (`⏱ Tempo: 3·1·2·0` clickeable abre HOWTO)
+- **Auto-colapsar card** al completar todos los sets: card baja opacidad + oculta sets/botones, queda solo header con chip "✓ N/N completo". Click header → toggle expand/collapse manual. Hint visible "▾ ocultar / ▸ expandir". Scroll suave al próximo ej no completo. Estado in-memory `_collapsedEx Set` + `_userExpanded Set` (user que re-expande no se vuelve a colapsar). Reset al cambiar de día. Telemetría `ex_collapse_toggle`.
 - Dict `HOWTO` cubre 16 ejercicios. Dict `TEMPO` (`index.html`) define cadencia evidence-based por ejercicio:
   - **Compuestos pierna PFPS** (prensa, jack sq): 3·1·2·0 eccentric overload (LaStayo 2003)
   - **Wall sit**: ISO hold puro (Naugle/Holden PFPS isometrics)

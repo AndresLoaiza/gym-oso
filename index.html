@@ -71,6 +71,11 @@
   /* CARDS */
   .card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 14px; margin-bottom: 12px; }
   .card h3 { font-family: 'Bebas Neue', sans-serif; font-size: 20px; letter-spacing: 1px; margin-bottom: 6px; }
+  .card.collapsed { padding: 10px 12px; opacity: 0.65; cursor: pointer; }
+  .card.collapsed:hover { opacity: 0.85; }
+  .card.collapsed .collapsible { display: none; }
+  .card .ex-header { cursor: pointer; user-select: none; }
+  .card .ex-collapse-hint { float: right; font-size: 12px; color: var(--muted); font-family: 'DM Mono', monospace; }
   .card .muscle { font-size: 11px; color: var(--accent); font-family: 'DM Mono', monospace; text-transform: uppercase; letter-spacing: 1px; }
 
   /* BUTTONS */
@@ -418,6 +423,9 @@ const DEFAULT_DB = {
 };
 let DB = loadDB();
 let wakeLock = null;
+// UI state — set de índices ex colapsados en card actual (resetea al cambiar sesión)
+let _collapsedEx = new Set();
+let _userExpanded = new Set();  // ex que user re-expandió manualmente (no auto-colapsar)
 
 function loadDB(){
   try { return Object.assign({}, DEFAULT_DB, JSON.parse(localStorage.getItem(STORE_KEY) || '{}')); }
@@ -1787,7 +1795,9 @@ function renderRutina(){
           sets,
           note: ex.note || '' };
       });
-      // Iniciar sessionId telemetría
+      // Iniciar sessionId telemetría + reset UI state collapse
+      _collapsedEx.clear();
+      _userExpanded.clear();
       if(DB.telemetry){
         DB.telemetry.sessionId = uid();
         track('session_start', { planRef: newRef, knee: DB._kneeStatus, exCount: td.exercises.length, focus: td.focus });
@@ -1816,7 +1826,14 @@ function renderRutinaInner(ns, td){
   </div>`;
   Object.entries(DB.sessionSets).forEach(([idx, ex]) => {
     const div = document.createElement('div');
-    div.className = 'card';
+    div.className = 'card' + (_collapsedEx.has(idx) ? ' collapsed' : '');
+    div.dataset.exIdx = idx;
+    const allDone = ex.sets.length > 0 && ex.sets.every(s => s.done);
+    const doneCount = ex.sets.filter(s => s.done).length;
+    const summaryChip = allDone
+      ? `<span class="chip" style="background:rgba(123,228,149,0.18);color:#7be495;">✓ ${doneCount}/${ex.sets.length} completo</span>`
+      : `<span class="chip" style="color:var(--muted);">${doneCount}/${ex.sets.length}</span>`;
+    const collapseHint = _collapsedEx.has(idx) ? '▸ expandir' : '▾ ocultar';
     const restSec = ex.rest ?? 90;
     const restLabel = restSec >= 60 ? `${Math.floor(restSec/60)}:${String(restSec%60).padStart(2,'0')}` : `${restSec}s`;
     const restChip = restSec > 0 ? `<span class="chip">⏱ Descanso: ${restLabel}</span>` : '';
@@ -1833,7 +1850,8 @@ function renderRutinaInner(ns, td){
       : `<div class="n">#</div><div class="set-lbl">${ex.isCardio?'Tiempo':'Reps'}</div><div class="set-lbl">${wHeader}</div><div class="set-lbl">✓</div>`;
     const hasHowto = !!HOWTO[ex.id];
     const howtoBtn = hasHowto ? `<button class="btn small" data-act="howto" data-id="${ex.id}" style="flex:0 0 auto;">ℹ Cómo usar</button>` : '';
-    div.innerHTML = `<div class="row-with-thumb">${thumb(ex.id,'md')}<div class="grow"><h3>${ex.name}</h3><div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px;">${restChip}${tempoChip}${uniChip}</div></div></div>
+    div.innerHTML = `<div class="row-with-thumb ex-header" data-act="toggle-collapse" data-i="${idx}">${thumb(ex.id,'md')}<div class="grow"><h3>${ex.name} <span class="ex-collapse-hint">${collapseHint}</span></h3><div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px;">${summaryChip}${restChip}${tempoChip}${uniChip}</div></div></div>
+      <div class="collapsible">
       ${howtoBtn ? `<div style="margin:6px 0 4px;">${howtoBtn}</div>` : ''}
       ${ex.note ? `<div class="pfps-warn">${ex.note}</div>` : ''}
       <div class="set-row set-header${timeOnly?' time-only':''}">${headerCells}</div>
@@ -1842,6 +1860,7 @@ function renderRutinaInner(ns, td){
         <button class="btn small" data-act="add-set" data-i="${idx}">+ Serie</button>
         ${restSec > 0 ? `<button class="btn small" data-act="rest-serie" data-i="${idx}" data-r="${restSec}">⏱ Serie ${restLabel}</button>` : ''}
         <button class="btn small" data-act="rest-ex" data-i="${idx}" data-r="150">⏱ Cambio ej. 2:30</button>
+      </div>
       </div>`;
     list.appendChild(div);
     renderSets(idx);
@@ -1851,10 +1870,23 @@ function renderRutinaInner(ns, td){
   list.querySelectorAll('[data-act]').forEach(b => {
     b.addEventListener('click', () => {
       const i = b.dataset.i;
+      if(b.dataset.act === 'toggle-collapse'){
+        if(_collapsedEx.has(i)){
+          _collapsedEx.delete(i);
+          _userExpanded.add(i);  // marca: user no quiere auto-colapsar
+        } else {
+          _collapsedEx.add(i);
+          _userExpanded.delete(i);
+        }
+        track('ex_collapse_toggle', { exId: DB.sessionSets[i].id, idx: i, collapsed: _collapsedEx.has(i) });
+        renderRutina();
+        return;
+      }
       if(b.dataset.act === 'add-set'){
         const last = DB.sessionSets[i].sets.at(-1) || { reps: 10, weight: 0, done: false };
         DB.sessionSets[i].sets.push({ reps: last.reps, weight: last.weight, done: false, userAdded: true });
         track('set_add', { exId: DB.sessionSets[i].id, idx: DB.sessionSets[i].sets.length-1 });
+        _collapsedEx.delete(i);  // si añade set, asegurar expandido
         saveDB(); renderSets(i); updateProgress();
       } else if(b.dataset.act === 'rest-serie'){ track('rest_start', { kind:'serie', sec:+b.dataset.r }); startTimer(+b.dataset.r, 'serie'); }
       else if(b.dataset.act === 'rest-ex'){ track('rest_start', { kind:'ejercicio', sec:+b.dataset.r }); startTimer(+b.dataset.r, 'ejercicio'); }
@@ -1928,6 +1960,23 @@ function renderSets(i){
       track('set_check', { exId: ex.id, idx: j, done: s.done, reps: s.reps, weight: s.weight, side: s.side });
       if(s.done && !ex.isCardio) { startTimer(ex.rest ?? 90, 'serie'); if(navigator.vibrate) navigator.vibrate(50); }
       saveDB(); updateProgress();
+      // Auto-colapsar si todos los sets quedan done + user no expandió manualmente
+      const allDone = ex.sets.length > 0 && ex.sets.every(x => x.done);
+      if(allDone && !_userExpanded.has(String(i))){
+        _collapsedEx.add(String(i));
+        // re-render solo si necesario (delay corto para que se vea el ✓ verde)
+        setTimeout(() => {
+          renderRutina();
+          // scroll a próximo ej no colapsado
+          const cards = document.querySelectorAll('#rutina-list .card');
+          for(const c of cards){
+            if(!c.classList.contains('collapsed') && c.dataset.exIdx !== undefined){
+              c.scrollIntoView({ behavior:'smooth', block:'start' });
+              break;
+            }
+          }
+        }, 400);
+      }
     });
     if(delBtn){
       delBtn.addEventListener('click', () => {
