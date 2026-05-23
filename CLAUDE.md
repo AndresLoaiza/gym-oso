@@ -114,12 +114,24 @@ App web móvil PWA de entrenamiento para **Andrés "El Oso" Loaiza** (Medellín)
 - Sin botones de regeneración manual (plan deriva siempre de baseline + ciencia)
 
 ### 💪 Hoy (rutina)
-- **Botón "ℹ Cómo usar"** en cada ejercicio (si existe `HOWTO[ex.id]`) abre modal con 3 secciones:
+- **Botón "ℹ Cómo usar"** en cada ejercicio (si existe `HOWTO[ex.id]`) abre modal con 4 secciones:
   - ⚙ Setup / Panel (config StairMaster botones MODE/USER/LEVEL/Manual, Hammer pies altos+anchos, leg ext tope mecánico, wall sit ~50cm pared, etc.)
-  - 🎯 Configuración (ROM, tempo excéntrica, cargas progresión por semana)
+  - ⏱ **Tempo (cadencia)** — notación bajar·pausa·subir·pausa en segundos + label corto + razón científica
+  - 🎯 Configuración (ROM, cargas progresión por semana)
   - 🦵 Reglas PFPS (ángulos seguros, alineación rodilla-pie, dolor-stop)
-- Dict `HOWTO` (`index.html`) cubre 16 ejercicios: stairmaster, trotadora, leg_press_45, leg_ext, prone_leg_curl, pantorrilla_sentado, crossover, _wall_sit, banco_plano, jack_squat, mancuernas (step-up), press_hombros_107, remo_isolateral, pulldown, hiper_inversa, camber_curl, adductor_abductor.
-- Texto basado en NSCA + Physiopedia PFPS + Z2 HR trekking (113-132 bpm para HRmax 188).
+- **Chip tempo en card** del ejercicio durante sesión (`⏱ Tempo: 3·1·2·0` clickeable abre HOWTO)
+- Dict `HOWTO` cubre 16 ejercicios. Dict `TEMPO` (`index.html`) define cadencia evidence-based por ejercicio:
+  - **Compuestos pierna PFPS** (prensa, jack sq): 3·1·2·0 eccentric overload (LaStayo 2003)
+  - **Wall sit**: ISO hold puro (Naugle/Holden PFPS isometrics)
+  - **Step-up**: 1·0·2·0 (subir 1s · bajar 2s) eccentric quad = trekking descenso
+  - **Leg ext**: 2·0·2·2 pausa apex 2s (Distefano 2009 VMO EMG)
+  - **Prone leg curl**: 1·1·3·0 eccentric isquio (balance H:Q)
+  - **Sóleo**: 1·1·2·1 pausa stretch + apex (HSR Kongsgaard 2009)
+  - **Abducción / VMO**: 2·0·2·1 pausa apex glúteo medio (Distefano 2009)
+  - **Tren superior**: 2·0·1·0 concentric explosive intent (González-Badillo)
+  - **Aislamiento tracción**: 2·0·1·1 pausa peak contracción
+  - **Cardio**: cadencia constante, no aplica
+- Texto basado en NSCA + Physiopedia PFPS + Z2 HR trekking (113-132 bpm para HRmax 188) + Roig 2009 + LaStayo 2003 + Distefano 2009 + González-Badillo + Kongsgaard 2009 HSR + Schoenfeld 2015 tempo.
 - **Check-in rodilla pre-sesión** (modal, 3 opciones):
   - 😊 Bien → sesión normal
   - 😐 Molestia leve → cargas -20%, label "(-20% por molestia)"

@@ -455,6 +455,7 @@ const GLOSARIO = {
   'Periodización': { full:'Periodización', def:'Dividir el plan en fases con focos distintos. Aquí: sem 1-2 adaptación → 3-5 fuerza → 6-7 resistencia específica trekking → 8 taper.' },
   'Isométrico': { full:'Ejercicio Isométrico', def:'Contraer el músculo SIN moverlo (ej: sentadilla a pared aguantando 30s). Bueno para PFPS porque no estresa la rótula con movimiento.' },
   'Excéntrica': { full:'Fase Excéntrica', def:'La fase de bajada / alargamiento del músculo. "Frenar la excéntrica" = bajar lento y controlado. Protege articulación y aumenta ganancia muscular.' },
+  'Tempo': { full:'Tempo (cadencia)', def:'Velocidad de cada fase del ejercicio. Notación: [bajar·pausa·subir·pausa] en segundos. Ej: 3·1·2·0 = bajar 3s, pausa 1s abajo, subir 2s, sin pausa arriba. Evidencia: eccentric lento (Roig 2009) maximiza hipertrofia + protege articulación; pausa apex (Distefano 2009) activa VMO/glúteo medio; concentric explosive intent (González-Badillo) desarrolla fuerza. Cada ejercicio tiene tempo específico — toca ℹ Cómo usar.' },
   'Vasto medial oblicuo': { full:'Vasto Medial Oblicuo (VMO)', def:'Ver VMO.' }
 };
 function term(key, label){
@@ -468,6 +469,80 @@ function openTerm(key){
   openModal(`<h2>${key}</h2><div class="small" style="color:var(--accent);font-family:'DM Mono',monospace;margin-bottom:8px;">${g.full}</div><div style="font-size:14px;line-height:1.5;">${g.def}</div><button class="btn primary" style="margin-top:14px" onclick="closeModal()">Entendido</button>`);
 }
 window.openTerm = openTerm;
+
+/* ============= TEMPO (cadencia por ejercicio) =============
+   Notación: [eccentric, pauseBottom, concentric, pauseTop] en segundos.
+   Evidencia consolidada:
+   - Roig 2009 meta-analysis: eccentric > concentric para hipertrofia + fuerza + adaptación tendón
+   - LaStayo 2003: eccentric overload = sarcomerogenesis + protección descenso montaña
+   - Schoenfeld 2015 tempo meta: TUT alto = misma hipertrofia, menor stress pico (PFPS-friendly)
+   - González-Badillo velocity: concentric explosive intent + eccentric controlado óptimo strength
+   - Distefano 2009 EMG: pausa apex en abducción/extensión maximiza VMO/glúteo medio
+   - Kongsgaard 2009 HSR (Heavy Slow Resistance): 3s+3s tendinopatía rotuliana
+   - Pallarés 2014 / Wilson 1996: pausa bottom elimina reflejo elástico
+   - Naugle/Holden PFPS: isométricos hold 5-45s sin estrés articular */
+const TEMPO = {
+  // Compuestos pierna PFPS: eccentric overload + control
+  leg_press_45: { ecc:3, pBot:1, conc:2, pTop:0, label:'3·1·2·0',
+    short:'Bajar 3s · pausa 1s abajo · subir 2s · sin pausa arriba',
+    why:'Eccentric overload (LaStayo 2003) replica demanda trekking descenso. Bajada lenta + pausa controla PFPS (sin rebote = sin pico de carga rotuliana). Subida moderada con intención explosiva pero peso modera velocidad real.' },
+  jack_squat: { ecc:3, pBot:1, conc:2, pTop:0, label:'3·1·2·0',
+    short:'Bajar 3s · pausa 1s · subir 2s',
+    why:'Igual que prensa pero con mayor activación glúteo. Bajada lenta crítica — sin pausa bottom el rebote elástico estresa rótula.' },
+  _wall_sit: { iso:true, label:'ISO hold',
+    short:'Hold continuo 20-45s según fase',
+    why:'Isométrico = oro PFPS (Naugle/Holden, Holden 2018 PFPS guidelines): activa VMO sin movimiento articular = sin stress rotuliano dinámico. Respirar normal, no aguantar aire.' },
+  mancuernas: { ecc:2, pBot:0, conc:1, pTop:0, label:'1·0·2·0 (subir·bajar)',
+    short:'Subir 1s explosivo · bajar 2s controlado',
+    why:'Step-up trekking-specific: bajada lenta es la fase eccentric quad que simula descenso montaña (LaStayo). Subida intencional pero peso bajo no requiere lentitud.' },
+
+  // Aislamiento pierna PFPS-sensible
+  leg_ext: { ecc:2, pBot:0, conc:2, pTop:2, label:'2·0·2·2',
+    short:'Subir 2s · pausa 2s arriba (apretar VMO) · bajar 2s',
+    why:'Pausa apex maximiza activación VMO (Distefano 2009 EMG). Bajada controlada — sin caída elástica al tope inferior. Si haces arco corto (últimos 30°), la pausa arriba es la zona segura PFPS donde más se recluta VMO.' },
+  prone_leg_curl: { ecc:3, pBot:0, conc:1, pTop:1, label:'1·1·3·0',
+    short:'Subir 1s · pausa 1s arriba · bajar 3s controlado',
+    why:'Eccentric isquio = protección desgarro descenso (LaStayo 2003). Balance H:Q crítico PFPS — isquio débil = sobrecarga cuádriceps = más stress rotuliano.' },
+  pantorrilla_sentado: { ecc:2, pBot:1, conc:1, pTop:1, label:'1·1·2·1',
+    short:'Subir 1s · pausa 1s arriba · bajar 2s · pausa 1s estiramiento abajo',
+    why:'Sóleo = Type I dominante, responde a volumen + TUT (Wackerhage 2018). HSR (Kongsgaard 2009) con pausa stretch refuerza tendón de Aquiles — crítico carga descenso.' },
+  crossover: { ecc:2, pBot:0, conc:2, pTop:1, label:'2·0·2·1',
+    short:'Sacar pierna 2s · pausa 1s contracción · regresar 2s',
+    why:'Pausa apex maximiza activación glúteo medio/VMO (Distefano 2009). Sin balanceo del tronco — el músculo pequeño requiere TUT alto.' },
+  adductor_abductor: { ecc:2, pBot:0, conc:2, pTop:1, label:'2·0·2·1',
+    short:'Abrir 2s · pausa 1s apretar · cerrar 2s controlado',
+    why:'Mismo principio que crossover. Pausa apex VMO (Distefano). Cierre lento = control eccentric estabilizadores.' },
+
+  // Tren superior — concentric intent + eccentric controlado
+  banco_plano: { ecc:2, pBot:0, conc:1, pTop:0, label:'2·0·1·0',
+    short:'Bajar 2s controlado · subir 1s explosivo (intención)',
+    why:'González-Badillo velocity training: intención concentric máxima desarrolla fuerza + potencia. Eccentric controlado evita rebote del pecho. No bajar más rápido — pierdes control de la trayectoria.' },
+  press_hombros_107: { ecc:2, pBot:0, conc:1, pTop:0, label:'2·0·1·0',
+    short:'Bajar 2s · subir 1s intencional',
+    why:'Mismo principio que banca. Sin bloquear codos arriba — mantiene tensión deltoide.' },
+  pulldown: { ecc:2, pBot:0, conc:1, pTop:1, label:'2·0·1·1',
+    short:'Bajar barra 1s · pausa 1s apretando dorsal · subir 2s controlado',
+    why:'Pausa peak = activación máxima dorsal/redondo (Bret Contreras EMG). Subida lenta = eccentric dorsal, no soltar.' },
+  remo_isolateral: { ecc:2, pBot:0, conc:1, pTop:1, label:'2·0·1·1',
+    short:'Tirar 1s · pausa 1s apretar escápula · regresar 2s',
+    why:'Pausa apex aprieta retracción escapular — clave para postura + balance push/pull. Sin momentum.' },
+  camber_curl: { ecc:2, pBot:0, conc:1, pTop:1, label:'2·0·1·1',
+    short:'Subir 1s · pausa 1s apretar bíceps · bajar 2s',
+    why:'Aislamiento pequeño = TUT > carga. Pausa peak = stress mecánico máximo en peak contraction.' },
+
+  // Posterior chain
+  hiper_inversa: { ecc:2, pBot:0, conc:1, pTop:1, label:'2·0·1·1',
+    short:'Subir piernas 1s · pausa 1s apretar glúteo · bajar 2s',
+    why:'Pausa peak glúteo = activación máxima cadena posterior trekking-specific. No hiperextender lumbar — paralelo al piso es el tope.' },
+
+  // Cardio (sin tempo aplicable)
+  stairmaster: { cadence:true, label:'Cadencia 50-60 pasos/min',
+    short:'Pasos uniformes constantes',
+    why:'Aerobic steady state Z2 — cadencia constante mantiene HR estable. Más rápido = flexión rodilla más profunda = riesgo PFPS.' },
+  trotadora: { cadence:true, label:'4.5-5.5 km/h · 10-12% inclinación',
+    short:'Caminar firme, pisada talón→punta completa',
+    why:'Aerobic Z2 inclinación replica demanda trekking ascenso. Sin trote (impacto contraindicado PFPS).' },
+};
 
 /* ============= HOWTO (config máquina + técnica PFPS) ============= */
 const HOWTO = {
@@ -757,8 +832,15 @@ function openHowto(id){
   const sec = (title, items, color) => items && items.length
     ? `<div style="margin-top:10px;"><div style="color:${color};font-weight:600;font-size:13px;margin-bottom:4px;">${title}</div><ul style="margin:0;padding-left:18px;font-size:13px;line-height:1.55;">${items.map(i=>`<li>${i}</li>`).join('')}</ul></div>`
     : '';
+  const t = TEMPO[id];
+  const tempoSec = t ? `<div style="margin-top:10px;background:rgba(196,167,255,0.08);border:1px solid var(--accent);border-radius:10px;padding:10px;">
+    <div style="color:var(--accent);font-weight:600;font-size:13px;margin-bottom:4px;">⏱ Tempo (cadencia): <span style="font-family:'DM Mono',monospace;">${t.label}</span></div>
+    <div style="font-size:13px;line-height:1.5;margin-bottom:6px;"><b>${t.short}</b></div>
+    <div style="font-size:12px;line-height:1.5;color:var(--muted);"><b>Por qué:</b> ${t.why}</div>
+  </div>` : '';
   openModal(`<h2 style="font-size:18px;">${h.title}</h2>
     ${sec('⚙ Setup / Panel', h.setup, 'var(--accent)')}
+    ${tempoSec}
     ${sec('🎯 Configuración', h.cfg, 'var(--accent2)')}
     ${sec('🦵 Reglas PFPS', h.pfps, '#ff6b6b')}
     <button class="btn primary" style="margin-top:14px;width:100%;" onclick="closeModal()">Entendido</button>`);
@@ -1672,6 +1754,8 @@ function renderRutinaInner(ns, td){
     const restSec = ex.rest ?? 90;
     const restLabel = restSec >= 60 ? `${Math.floor(restSec/60)}:${String(restSec%60).padStart(2,'0')}` : `${restSec}s`;
     const restChip = restSec > 0 ? `<span class="chip">⏱ Descanso: ${restLabel}</span>` : '';
+    const t = TEMPO[ex.id];
+    const tempoChip = t ? `<span class="chip" title="${(t.short||'').replace(/"/g,'&quot;')}" style="background:rgba(196,167,255,0.15);color:var(--accent);cursor:pointer;" data-act="howto" data-id="${ex.id}">⏱ Tempo: ${t.label}</span>` : '';
     const hideW = ex.isCardio || ex.noWeight;
     const isTimeRowsHeader = ex.sets.some(s => typeof s.reps === 'string' && /s$|min/.test(s.reps));
     const timeOnly = hideW && (ex.isCardio || ex.noWeight || isTimeRowsHeader);
@@ -1681,7 +1765,7 @@ function renderRutinaInner(ns, td){
       : `<div class="n">#</div><div class="set-lbl">${ex.isCardio?'Tiempo':'Reps'}</div><div class="set-lbl">${wHeader}</div><div class="set-lbl">✓</div>`;
     const hasHowto = !!HOWTO[ex.id];
     const howtoBtn = hasHowto ? `<button class="btn small" data-act="howto" data-id="${ex.id}" style="flex:0 0 auto;">ℹ Cómo usar</button>` : '';
-    div.innerHTML = `<div class="row-with-thumb">${thumb(ex.id,'md')}<div class="grow"><h3>${ex.name}</h3>${restChip}</div></div>
+    div.innerHTML = `<div class="row-with-thumb">${thumb(ex.id,'md')}<div class="grow"><h3>${ex.name}</h3><div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px;">${restChip}${tempoChip}</div></div></div>
       ${howtoBtn ? `<div style="margin:6px 0 4px;">${howtoBtn}</div>` : ''}
       ${ex.note ? `<div class="pfps-warn">${ex.note}</div>` : ''}
       <div class="set-row set-header${timeOnly?' time-only':''}">${headerCells}</div>
