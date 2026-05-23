@@ -41,6 +41,20 @@ App web móvil PWA de entrenamiento para **Andrés "El Oso" Loaiza** (Medellín)
 - `convert.py` — convierte HEIC → JPG (requiere `pillow-heif`, `Pillow`)
 - `gen_thumbs.py` — genera `catalogo-imgs.js` (thumbnails 220px JPEG q70 base64)
 
+## Tests
+
+`tests/test.js` — suite Node.js. Correr **siempre** antes de commit:
+
+```bash
+node tests/test.js
+```
+
+Exit 0 = pass, 1 = fail. Cobertura actual (106 tests): epley1RM/workWeight, phaseOfWeek/windowOf, OBJECTIVE windows, CATALOGO integrity (no stale ids, flags unilateral), HOWTO/TEMPO/EX_TYPE coverage por id, analyzeWeightPattern (constant/asc/desc/mixed/unilateral + drop), decideBump (double progression + knee + shortfalls + caps + cardio skip), DEFAULT_DB.
+
+Harness: stub DOM/localStorage/navigator + `new Function(code + 'return {bindings};')()` para extraer const/function (indirect eval no expone bindings const). Test runner casero `test(name, fn)` con assertEq/assertDeep/assertTrue/assertFalse.
+
+**Update tests al agregar lógica testeable** (nueva función pura, nuevo dict por id, nueva regla progresión, nuevo flag CATALOGO).
+
 -----
 
 ## Estructura del localStorage
