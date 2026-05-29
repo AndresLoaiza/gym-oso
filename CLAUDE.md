@@ -49,9 +49,9 @@ App web móvil PWA de entrenamiento para **Andrés "El Oso" Loaiza** (Medellín)
 node tests/test.js
 ```
 
-Exit 0 = pass, 1 = fail. Cobertura actual (106 tests): epley1RM/workWeight, phaseOfWeek/windowOf, OBJECTIVE windows, CATALOGO integrity (no stale ids, flags unilateral), HOWTO/TEMPO/EX_TYPE coverage por id, analyzeWeightPattern (constant/asc/desc/mixed/unilateral + drop), decideBump (double progression + knee + shortfalls + caps + cardio skip), DEFAULT_DB.
+Exit 0 = pass, 1 = fail. Cobertura actual (115 tests): epley1RM/workWeight, phaseOfWeek/windowOf, OBJECTIVE windows, CATALOGO integrity (no stale ids, flags unilateral), HOWTO/TEMPO/EX_TYPE coverage por id, analyzeWeightPattern (constant/asc/desc/mixed/unilateral + drop), decideBump (double progression + knee + shortfalls + caps + cardio skip), PROG_CAPS recalibrados, applyProgression sync de peso probado (propaga proven, respeta cap, no sube en bump negativo, ignora drop), DEFAULT_DB.
 
-Harness: stub DOM/localStorage/navigator + `new Function(code + 'return {bindings};')()` para extraer const/function (indirect eval no expone bindings const). Test runner casero `test(name, fn)` con assertEq/assertDeep/assertTrue/assertFalse.
+Harness: stub DOM/localStorage/navigator + `new Function(code + 'return {bindings};')()` para extraer const/function (indirect eval no expone bindings const). Bindings expuestos incluyen `DB` + `PROG_CAPS` para tests de `applyProgression` (mutan `DB.plan`). Test runner casero `test(name, fn)` con assertEq/assertDeep/assertTrue/assertFalse.
 
 **Update tests al agregar lógica testeable** (nueva función pura, nuevo dict por id, nueva regla progresión, nuevo flag CATALOGO).
 
@@ -283,12 +283,17 @@ Flag `unilateral:true` en CATALOGO + plan generator + ex objects. Helper `isUnil
 **Auto-progresión:** funciona naturalmente con sets duplicados — `done.length === ex.sets.length` espera 2N completos, shortfalls cuenta cualquier lado. Patrón unilateral evita falso-positivo drop por asimetría.
 
 ### Aplicación (`applyProgression`)
-- **Weight bump**: a todas las semanas futuras del mismo `(d, ex.id)` con mismo `phase` (no cruza fases — strength vs endurance tienen %1RM distintos)
+- **Sync de peso probado (clave anti-fricción)**: el peso base para semanas futuras = `max(planWeight, provenW)`, donde `provenW` = peso de la serie más pesada que cumplió las reps target **y no fue drop de fatiga**. Se propaga con **cualquier patrón** (no solo `constant`) y **aunque el bump de peso sea 0** (ej. double progression que solo sube reps). Esto sincroniza el plan con lo que el user realmente levanta → elimina la re-edición manual de peso cada sesión y corrige baselines subestimados sin esperar +2.5 incrementales. Caso real que motivó el cambio: baseline derivado de tests con 54/20/25 reps (1RM al piso por cap r=30) → plan arrancó muy por debajo del peso usable; el user re-editaba ~30 pesos por sesión (telemetría).
+- **Weight bump > 0** (decideBump): se suma sobre `max(syncBase, oldW)` por semana, capeado.
+- **Weight bump < 0** (dolor / ≥2 shortfalls): reduce **desde el plan** (`syncBase = planWeight`), NO sincroniza arriba el peso probado.
+- Todo el peso se aplica a semanas futuras same-phase (no cruza fases — %1RM distinto).
 - **Rep bump > 0** (escalación intra-window): solo a próxima semana same-day same-phase, clamp a `repMax`
 - **Rep bump < 0** (reset por repMax alcanzado): a todas same-phase futuras, reset a `repMin`
-- **Weight base** = `max(topSet con reps target, planWeight)` — evita peso obsoleto
-- **Sync sin bump**: si user usó peso constante distinto al plan, propaga ese peso
-- **Caps PFPS** (`PROG_CAPS`): leg_ext 17.5 max, crossover 12 max, step-up 15 max, abductor 22.5 max
+- **Caps PFPS recalibrados** (`PROG_CAPS`) — solo donde hay carga directa de rótula:
+  - `leg_ext` 17.5 (extensión rodilla = PFJ directo, cap duro) · `mancuernas` step-up 20 (excéntrico cuádriceps cargado)
+  - `crossover` 25 y `adductor_abductor` 45 (abducción/kickback de cadera = open-chain, NO carga rótula → cap solo seguridad de máquina; antes 12/22.5 frenaban progreso real — el user usaba 32×15 cómodo en abductor)
+  - `camber_curl` sin cap (curl bíceps, sin relación PFPS)
+  - Justificación: PFJ stress depende de flexión de rodilla bajo carga (Powers 2010); ejercicios sin flexión de rodilla cargada no estresan la rótula.
 - Modal post-sesión muestra `from→to kg · from→to reps` + razón + "↶ Deshacer"
 
 ### Adaptación al objetivo trekking

@@ -1042,14 +1042,18 @@ function telemetrySummary(){
    - Cardio / noWeight / time-based → skip.
    - Aplica a TODAS las ocurrencias futuras del mismo (día, ex.id). */
 const PROG_CAPS = {
-  // PFPS: limita techo aislamiento rodilla
-  leg_ext: { max: 17.5, isolation: true },
-  crossover: { max: 12, isolation: true },     // VMO endurance, no carga
-  adductor_abductor: { max: 22.5, isolation: true },
-  camber_curl: { max: 22.5, isolation: true },
+  // Caps de peso: SOLO donde hay carga directa de la rótula (PFPS) o seguridad.
+  // Abducción/aducción de cadera y curl bíceps NO cargan la rótula (open-chain
+  // de cadera / tren superior) → cap solo como tope de seguridad de máquina, no
+  // freno PFPS. Evidencia: PFJ stress depende de flexión de rodilla bajo carga
+  // (Powers 2010); ejercicios sin flexión de rodilla cargada no estresan rótula.
+  leg_ext: { max: 17.5, isolation: true },     // extensión rodilla = PFJ directo → cap duro
+  mancuernas: { max: 20, isolation: true },    // step-up = excéntrico cuádriceps cargado (knee)
+  crossover: { max: 25, isolation: true },     // cable abducción/kickback open-chain cadera
+  adductor_abductor: { max: 45, isolation: true }, // máquina abducción cadera, no carga rótula
+  camber_curl: { isolation: true },            // curl bíceps, sin relación PFPS → sin cap
   prone_leg_curl: { isolation: true },
   hiper_inversa: { isolation: true },
-  mancuernas: { max: 15, isolation: true },    // step-up trekking
   pantorrilla_sentado: {},                      // compuesto sóleo
   leg_press_45: { quadHeavy: true },
   jack_squat: { quadHeavy: true },
@@ -1180,48 +1184,41 @@ function applyProgression(session){
     const { weightBump, repBump, reason } = decideBump(ex, knee, targetReps, pattern, planEx);
     const cap = PROG_CAPS[ex.id] || {};
     const planPhase = planEx?.phase;
-
-    // Sin bump: detectar sync de peso (user constante a peso distinto)
-    if(weightBump === 0 && repBump === 0){
-      if(pattern.kind === 'constant' && pattern.topSet && planEx
-         && pattern.topSet.weight > 0 && pattern.topSet.weight !== (+planEx.weight||0)
-         && (typeof targetReps !== 'number' || pattern.topSet.reps >= targetReps)){
-        const newW = Math.max(2.5, Math.min(cap.max ?? Infinity, pattern.topSet.weight));
-        let applied = false, beforeW = null, afterW = null;
-        for(let wi = w + 1; wi < DB.plan.weeks.length; wi++){
-          const target = DB.plan.weeks[wi]?.[d]?.exercises.find(e => e.id === ex.id);
-          if(!target || target.isCardio || target.noWeight) continue;
-          if(planPhase && target.phase && target.phase !== planPhase) continue;
-          const oldW = +target.weight || 0;
-          if(newW === oldW) continue;
-          target.weight = newW;
-          if(!applied){ beforeW = oldW; afterW = newW; applied = true; }
-        }
-        if(applied) changes.push({ id:ex.id, name:ex.name, fromW:beforeW, toW:afterW,
-                                   fromR:targetReps, toR:targetReps,
-                                   weightBump:0, repBump:0, reason:`sync peso usado (${pattern.topSet.weight}kg)` });
-      }
-      continue;
-    }
-
     const planWeight = planEx ? (+planEx.weight || 0) : 0;
-    const baseW = Math.max(pattern.topSet?.weight || 0, planWeight);
+
+    // Cardio / isométrico (noWeight): sin peso que progresar.
+    if(ex.isCardio || ex.noWeight) continue;
+
+    // Peso PROBADO: serie más pesada que cumplió las reps target y NO fue un
+    // drop de fatiga. Esto sincroniza el plan con lo que el user realmente
+    // levanta — elimina la re-edición manual de peso sesión tras sesión y
+    // corrige baselines subestimados. Aplica con CUALQUIER patrón (no solo
+    // 'constant') porque un warm-up ascendente o un set bajado al final no
+    // invalidan la serie pesada que sí se completó.
+    const repsOK = (typeof targetReps !== 'number')
+      ? true
+      : !!(pattern.topSet && pattern.topSet.reps >= targetReps);
+    const provenW = (pattern.topSet && !pattern.dropDetected && repsOK)
+      ? (+pattern.topSet.weight || 0) : 0;
+    // Base de peso para semanas futuras:
+    //  - bump negativo (dolor / shortfalls): reduce desde el plan, NO sincroniza arriba.
+    //  - resto: nunca por debajo del plan, sube al peso probado por el user.
+    const syncBase = weightBump < 0 ? planWeight : Math.max(planWeight, provenW);
+
     let appliedW = false, beforeW = null, afterW = null;
     let appliedR = false, beforeR = targetReps, afterR = targetReps;
 
-    // Weight: futuras same-phase
-    if(weightBump !== 0){
-      for(let wi = w + 1; wi < DB.plan.weeks.length; wi++){
-        const target = DB.plan.weeks[wi]?.[d]?.exercises.find(e => e.id === ex.id);
-        if(!target || target.isCardio || target.noWeight) continue;
-        if(planPhase && target.phase && target.phase !== planPhase) continue;
-        const oldW = +target.weight || 0;
-        const refW = Math.max(baseW, oldW);
-        const newW = Math.max(2.5, Math.min(cap.max ?? Infinity, refW + weightBump));
-        if(newW === oldW) continue;
-        target.weight = newW;
-        if(!appliedW){ beforeW = oldW; afterW = newW; appliedW = true; }
-      }
+    // Weight: futuras same-phase. Sincroniza proven + aplica bump.
+    for(let wi = w + 1; wi < DB.plan.weeks.length; wi++){
+      const target = DB.plan.weeks[wi]?.[d]?.exercises.find(e => e.id === ex.id);
+      if(!target || target.isCardio || target.noWeight) continue;
+      if(planPhase && target.phase && target.phase !== planPhase) continue;
+      const oldW = +target.weight || 0;
+      const refW = Math.max(syncBase, oldW);
+      const newW = Math.max(2.5, Math.min(cap.max ?? Infinity, refW + weightBump));
+      if(newW === oldW) continue;
+      target.weight = newW;
+      if(!appliedW){ beforeW = oldW; afterW = newW; appliedW = true; }
     }
 
     // Reps: escalación a próxima only, reset a todas same-phase
@@ -1253,11 +1250,14 @@ function applyProgression(session){
     }
 
     if(appliedW || appliedR){
+      // Sync puro de peso (sin decisión de bump): aclarar razón en el modal.
+      const reasonOut = (weightBump === 0 && repBump === 0 && appliedW)
+        ? `sync peso usado (${afterW}kg)` : reason;
       changes.push({
         id:ex.id, name:ex.name,
         fromW: appliedW ? beforeW : planWeight, toW: appliedW ? afterW : planWeight,
         fromR: beforeR, toR: afterR,
-        weightBump, repBump, reason
+        weightBump, repBump, reason: reasonOut
       });
     }
   }

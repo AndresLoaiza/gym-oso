@@ -69,7 +69,8 @@ try {
   const exposeReturn = `return {
     DEFAULT_DB, OBJECTIVE, CATALOGO, HOWTO, TEMPO, EX_TYPE,
     epley1RM, workWeight, phaseOfWeek, windowOf, isUnilateral,
-    analyzeWeightPattern, decideBump, applyProgression, tagPlanWithWindows
+    analyzeWeightPattern, decideBump, applyProgression, tagPlanWithWindows,
+    PROG_CAPS, DB
   };`;
   exposed = new Function(code + '\n' + exposeReturn)();
 } catch(e) {
@@ -276,6 +277,65 @@ test('decideBump cardio skip', () => {
 test('decideBump time-based wall sit skip', () => {
   const r = decideBump({ id:'_wall_sit', noWeight:true, sets:[{reps:'20s',done:true}] }, 'bien', null, {kind:'constant'}, null);
   assertEq(r.weightBump, 0);
+});
+
+console.log('\n--- PROG_CAPS (caps PFPS recalibrados) ---');
+test('cap leg_ext 17.5 (PFJ directo, se mantiene)', () => assertEq(PROG_CAPS.leg_ext.max, 17.5));
+test('cap mancuernas 20 (step-up knee load)', () => assertEq(PROG_CAPS.mancuernas.max, 20));
+test('cap adductor_abductor subido a 45 (open-chain cadera)', () => assertEq(PROG_CAPS.adductor_abductor.max, 45));
+test('camber_curl sin cap (bíceps, no PFPS)', () => assertEq(PROG_CAPS.camber_curl.max, undefined));
+test('crossover cap 25 (open-chain cadera)', () => assertEq(PROG_CAPS.crossover.max, 25));
+
+console.log('\n--- applyProgression sync de peso probado ---');
+// Construye un plan mínimo de 2 semanas same-phase (adapt) en DB para probar
+// la propagación del peso realmente levantado por el user.
+function _planEx(id, weight, reps, extra){
+  return Object.assign({ id, name:id, sets:3, reps, weight, rest:60, phase:'adapt' }, extra||{});
+}
+function _setupPlan(exFactory){
+  DB.plan = { weeks: [ [ { exercises: [exFactory()] } ], [ { exercises: [exFactory()] } ] ] };
+}
+function _session(id, name, sets, knee){
+  return { planRef:{w:0,d:0}, kneeStatus:knee||'bien', exercises:[{ id, name, sets }] };
+}
+
+test('sync: user usa 32 (plan 17.5), repBump escala y peso se propaga a futuro', () => {
+  _setupPlan(() => _planEx('adductor_abductor', 17.5, 15, { repMin:12, repMax:20 }));
+  const sets = [ {reps:15,weight:32,done:true},{reps:15,weight:32,done:true},
+                 {reps:15,weight:32,done:true},{reps:15,weight:32,done:true} ];
+  // ojo: plan ex tiene sets:3 pero la sesión trae 4 done; allComplete usa ex.sets.length
+  const sess = _session('adductor_abductor', 'Abductor', sets);
+  // ajustar plan ex sets a 4 para allComplete
+  DB.plan.weeks[0][0].exercises[0].sets = 4;
+  DB.plan.weeks[1][0].exercises[0].sets = 4;
+  const changes = applyProgression(sess);
+  const future = DB.plan.weeks[1][0].exercises[0];
+  assertEq(future.weight, 32, 'peso futuro sincronizado al probado');
+  assertEq(future.reps, 16, 'reps escaladas +1 (double prog <repMax)');
+});
+
+test('sync respeta cap: user 60kg en adductor → capado a 45', () => {
+  _setupPlan(() => _planEx('adductor_abductor', 17.5, 15, { repMin:12, repMax:20, sets:4 }));
+  const sets = [ {reps:15,weight:60,done:true},{reps:15,weight:60,done:true},
+                 {reps:15,weight:60,done:true},{reps:15,weight:60,done:true} ];
+  applyProgression(_session('adductor_abductor', 'Abductor', sets));
+  assertEq(DB.plan.weeks[1][0].exercises[0].weight, 45, 'capado a 45');
+});
+
+test('sync NO sube en bump negativo (2 shortfalls reducen desde plan)', () => {
+  _setupPlan(() => _planEx('leg_press_45', 40, 12, { repMin:10, repMax:15, sets:3 }));
+  // user usó 50 pero falló reps en 2 sets → -peso, sin sincronizar el 50 arriba
+  const sets = [ {reps:8,weight:50,done:true},{reps:7,weight:50,done:true},{reps:8,weight:50,done:true} ];
+  applyProgression(_session('leg_press_45', 'Prensa', sets));
+  assertEq(DB.plan.weeks[1][0].exercises[0].weight, 37.5, 'reduce desde plan (40-2.5), no sube a 50');
+});
+
+test('sync ignora drop de fatiga (topSet no propaga si dropDetected)', () => {
+  _setupPlan(() => _planEx('banco_plano', 30, 10, { repMin:5, repMax:10, sets:2 }));
+  // descending con drop ≥10%: 40→30. dropDetected → sin progreso ni sync arriba
+  const sets = [ {reps:10,weight:40,done:true},{reps:10,weight:30,done:true} ];
+  applyProgression(_session('banco_plano', 'Banca', sets));
+  assertEq(DB.plan.weeks[1][0].exercises[0].weight, 30, 'queda en plan, no sincroniza 40 (drop)');
 });
 
 console.log('\n--- DB defaults ---');
