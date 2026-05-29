@@ -296,7 +296,7 @@ Flag `unilateral:true` en CATALOGO + plan generator + ex objects. Helper `isUnil
 - **Rep bump > 0** (escalación intra-window): solo a próxima semana same-day same-phase, clamp a `repMax`
 - **Rep bump < 0** (reset por repMax alcanzado): a todas same-phase futuras, reset a `repMin`
 - **Caps PFPS recalibrados** (`PROG_CAPS`) — solo donde hay carga directa de rótula:
-  - `leg_ext` 17.5 (extensión rodilla = PFJ directo, cap duro) · `mancuernas` step-up 20 (excéntrico cuádriceps cargado)
+  - `leg_ext` 17.5 (extensión rodilla = PFJ directo, cap duro) · `mancuernas` step-up 25 (banco BAJO <90° → la carga no estresa la rótula; limitante es ROM, no peso. User reportó step-up "muy sencillo" → progresar por carga+reps, NO subir altura del banco)
   - `crossover` 25 y `adductor_abductor` 45 (abducción/kickback de cadera = open-chain, NO carga rótula → cap solo seguridad de máquina; antes 12/22.5 frenaban progreso real — el user usaba 32×15 cómodo en abductor)
   - `camber_curl` sin cap (curl bíceps, sin relación PFPS)
   - Justificación: PFJ stress depende de flexión de rodilla bajo carga (Powers 2010); ejercicios sin flexión de rodilla cargada no estresan la rótula.

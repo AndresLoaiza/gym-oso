@@ -1104,7 +1104,7 @@ const PROG_CAPS = {
   // freno PFPS. Evidencia: PFJ stress depende de flexión de rodilla bajo carga
   // (Powers 2010); ejercicios sin flexión de rodilla cargada no estresan rótula.
   leg_ext: { max: 17.5, isolation: true },     // extensión rodilla = PFJ directo → cap duro
-  mancuernas: { max: 20, isolation: true },    // step-up = excéntrico cuádriceps cargado (knee)
+  mancuernas: { max: 25, isolation: true },    // step-up: banco BAJO (<90°) → carga no estresa rótula; limitante es ROM no peso
   crossover: { max: 25, isolation: true },     // cable abducción/kickback open-chain cadera
   adductor_abductor: { max: 45, isolation: true }, // máquina abducción cadera, no carga rótula
   camber_curl: { isolation: true },            // curl bíceps, sin relación PFPS → sin cap
@@ -1601,7 +1601,7 @@ function generateLocalPlan(){
         { id:'trotadora', name:'Caminata inclinada 10-12%', sets:1, reps:`${15+week*2} min`, rest:0, isCardio:true, note:'Calentamiento + Z2 base aeróbica. Inclinación alta, sin trote.' },
         { id:'jack_squat', name:'Jack Squat (ROM parcial)', ...jack, weight:wLeg(0.50), note:`Compuesto pierna: ${jack.sets} sets. ≈50% prensa (más glúteo). ROM parcial.` },
         rdlExercise(week),
-        { id:'mancuernas', name:'Step-up con mancuernas (banco bajo)', sets:stepSets, reps:10, weight:Math.min(15, Math.max(5, Math.round(rmBench*0.12/2.5)*2.5)), rest:75, unilateral:true, note:`UNILATERAL trekking-specific: ${stepSets} sets × 10 reps POR PIERNA. Mancuerna ≈12% banca.` },
+        { id:'mancuernas', name:'Step-up con mancuernas (banco bajo)', sets:stepSets, reps:12, weight:Math.min(25, Math.max(10, Math.round(rmBench*0.20/2.5)*2.5)), rest:75, unilateral:true, note:`UNILATERAL trekking-specific: ${stepSets} sets × 12 reps POR PIERNA. Banco BAJO (rodilla <90°, NO subir altura — sube PESO). Bajada LENTA controlada (excéntrico = descenso montaña).` },
         { id:'adductor_abductor', name:'Abductor (foco VMO)', sets:4, reps:15, weight:wLeg(0.25), rest:45, note:'VMO + glúteo medio: 4 sets ≈25% prensa (prioridad PFPS).' },
         { id:'stairmaster', name:'StairMaster (finisher Z2)', sets:1, reps:`${10+week} min`, rest:0, isCardio:true, note:'Finisher Z2 ascenso. Opcional si queda energía — la prioridad es la cadena posterior arriba.' }
       ]

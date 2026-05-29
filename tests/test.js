@@ -281,7 +281,7 @@ test('decideBump time-based wall sit skip', () => {
 
 console.log('\n--- PROG_CAPS (caps PFPS recalibrados) ---');
 test('cap leg_ext 17.5 (PFJ directo, se mantiene)', () => assertEq(PROG_CAPS.leg_ext.max, 17.5));
-test('cap mancuernas 20 (step-up knee load)', () => assertEq(PROG_CAPS.mancuernas.max, 20));
+test('cap mancuernas 25 (step-up banco bajo, limitante ROM no peso)', () => assertEq(PROG_CAPS.mancuernas.max, 25));
 test('cap adductor_abductor subido a 45 (open-chain cadera)', () => assertEq(PROG_CAPS.adductor_abductor.max, 45));
 test('camber_curl sin cap (bíceps, no PFPS)', () => assertEq(PROG_CAPS.camber_curl.max, undefined));
 test('crossover cap 25 (open-chain cadera)', () => assertEq(PROG_CAPS.crossover.max, 25));
