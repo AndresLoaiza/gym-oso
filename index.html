@@ -992,6 +992,62 @@ function tagPlanWithWindows(){
   }
 }
 
+/* Orden canónico Day C (trekking): cadena posterior (RDL) al frente, StairMaster
+   finisher. Ver razón en generateLocalPlan. peso_muerto (RDL) reemplaza a
+   hiper_inversa + crossover kickback. */
+const DAYC_ORDER = ['trotadora','jack_squat','peso_muerto','mancuernas','adductor_abductor','stairmaster'];
+
+/* Construye el ejercicio de cadena posterior del Day C: PESO MUERTO RUMANO (RDL).
+   Hip hinge → glúteo + isquios + erectores en un movimiento. PFPS-safe (hip-dominant,
+   rodilla suave, sin estrés rotuliano). Reemplaza hiper_inversa (máquina mala) y el
+   glute kickback (incómodo). Compartido por generador y migración para evitar drift. */
+function rdlExercise(week){
+  const rmLeg = DB.profile?.baseline?.legPress1RM || 60;
+  const round = v => Math.max(2.5, Math.round(v / 2.5) * 2.5);
+  const wLeg = f => round(rmLeg * f);
+  const ph = phaseOfWeek(week);
+  const r = ph==='str'   ? { sets:4, reps:8,  rest:150, weight:wLeg(0.42) }
+          : ph==='end'   ? { sets:3, reps:15, rest:75,  weight:wLeg(0.30) }
+          : ph==='taper' ? { sets:2, reps:10, rest:90,  weight:wLeg(0.35) }
+          :                { sets:3, reps:12, rest:90,  weight:wLeg(0.30) };
+  return { id:'peso_muerto', name:'Peso muerto rumano (RDL)', ...r,
+    note:'Cadena posterior (PRIORIDAD trekking): hip hinge = glúteo + isquios + erectores. Espalda recta, rodilla SUAVE (no es sentadilla), barra pegada a la pierna. Hip-dominant → sin estrés rotuliano. Empezar con barra sola (20kg) y dominar técnica.' };
+}
+
+/* Migración Day C: reconstruye el Day C de planes YA generados a la composición y
+   orden nuevos. Preserva pesos/reps progresados de los ejercicios que sobreviven
+   (jack_squat, mancuernas, adductor_abductor, etc.); elimina hiper_inversa y el
+   glute kickback (crossover en Day C); inserta peso_muerto (RDL) fresco por fase.
+   Idempotente vía flag. */
+function migrateDayCV3(){
+  if(!DB.plan?.weeks || DB.plan._dayCV3) return;
+  let touched = false;
+  for(let wi = 0; wi < DB.plan.weeks.length; wi++){
+    const day = DB.plan.weeks[wi]?.[2];  // índice 2 = Trekking · Cardio funcional
+    if(!day || !Array.isArray(day.exercises)) continue;
+    if(!/Trekking/i.test(day.focus || '')) continue;
+    const byId = {};
+    for(const ex of day.exercises) byId[ex.id] = ex;
+    const rebuilt = DAYC_ORDER.map(id => {
+      if(id === 'peso_muerto') return byId.peso_muerto || rdlExercise(wi);  // preserva si ya existe
+      return byId[id] || null;  // sobrevivientes conservan su objeto (pesos progresados)
+    }).filter(Boolean);
+    // StairMaster como finisher: refrescar nombre/nota (cosmético, no toca progresión)
+    const sm = rebuilt.find(e => e.id === 'stairmaster');
+    if(sm){ sm.name = 'StairMaster (finisher Z2)'; sm.note = 'Finisher Z2 ascenso. Opcional si queda energía — la prioridad es la cadena posterior arriba.'; }
+    day.exercises = rebuilt;
+    day.notes = 'Mimética montaña. Cadena posterior (hip hinge) + cuádriceps + estabilizadores + cardio Z2.';
+    touched = true;
+  }
+  if(touched){
+    tagPlanWithWindows();  // taggea el peso_muerto nuevo con windows posterior
+    DB.plan._dayCV3 = true;
+    saveDB();
+  } else {
+    DB.plan._dayCV3 = true;
+  }
+}
+
 /* ============= TELEMETRÍA UX =============
    Buffer local de eventos para análisis offline de fricciones UX.
    100% local: nunca sale del dispositivo hasta que user exporta JSON.
@@ -1373,7 +1429,20 @@ function renderOnbStep(){
         const rm = epley1RM(t.w, t.r);
         return { id, name:t.name, rm };
       });
-      $('#ob-1rm').innerHTML = '<b>1RM estimados:</b><br>' + rows.map(r => `· ${r.name}: <b style="color:var(--accent)">${r.rm} kg</b>`).join('<br>');
+      // Aviso: reps muy altas = peso demasiado liviano para estimar fuerza.
+      // La fórmula 1RM pierde precisión >~15-20 reps (Epley inválida, Mayhew
+      // se aplana) → el plan deriva cargas subestimadas y el user re-edita peso
+      // cada sesión. Mejor re-test con peso que falle a ~8-12 reps (RIR 1-2).
+      const altas = Object.entries(obData.tests).filter(([id, t]) => (+t.r || 0) > 20);
+      let aviso = '';
+      if(altas.length){
+        const nombres = altas.map(([id, t]) => t.name.split('(')[0].trim()).join(', ');
+        aviso = `<div style="margin-top:10px; padding:9px 10px; border-radius:8px; background:rgba(255,107,53,0.14); border:1px solid var(--accent2); font-size:12px; line-height:1.45;">
+          ⚠ <b>Peso muy liviano para estimar tu fuerza</b> en: ${nombres}.<br>
+          Hiciste >20 reps → la fórmula de 1RM pierde precisión y tu plan arrancará con cargas <b>bajas</b> (tendrás que subirlas a mano cada sesión).<br>
+          Sube el peso hasta que ~8-12 reps te cuesten de verdad (RIR 1-2) y vuelve a contar.</div>`;
+      }
+      $('#ob-1rm').innerHTML = '<b>1RM estimados:</b><br>' + rows.map(r => `· ${r.name}: <b style="color:var(--accent)">${r.rm} kg</b>`).join('<br>') + aviso;
     };
     $$('#ob-tests .ob-w').forEach(inp => inp.addEventListener('input', e => {
       obData.tests[e.target.dataset.id].w = +e.target.value || 0; calc();
@@ -1518,19 +1587,23 @@ function generateLocalPlan(){
     const jack = ph==='str' ? {sets:4, reps:8, rest:120} : ph==='end' ? {sets:3, reps:15, rest:60} : ph==='taper' ? {sets:2, reps:10, rest:90} : {sets:3, reps:12, rest:75};
     // Step-up (compound unilateral): 3-4 sets por pierna
     const stepSets = ph==='str' ? 4 : 3;
-    // Glute kickback (aislamiento): 2-3 sets
-    const kickSets = ph==='adapt'||ph==='taper' ? 2 : 3;
     return {
       focus: 'Trekking · Cardio funcional',
-      notes: 'Mimética montaña. Cardio + cadenas posteriores + estabilizadores.',
+      notes: 'Mimética montaña. Cadena posterior (hip hinge) + cuádriceps + estabilizadores + cardio Z2.',
+      // ORDEN POR PRIORIDAD-EN-FRESCO (Simão 2012, efecto del orden: los primeros
+      // ejercicios reciben mejor volumen/calidad). Cadena posterior = extensión de
+      // cadera = ascenso/descenso trekking → al frente (antes se abandonaba al final;
+      // telemetría: 0% completado). StairMaster = finisher Z2 (cardio redundante con
+      // Day A, lo más prescindible). Posterior chain via PESO MUERTO RUMANO (hip hinge):
+      // reemplaza hiper_inversa (máquina mala) + glute kickback (incómoda). El RDL cubre
+      // glúteo + isquios + erectores en un solo movimiento PFPS-safe (hip-dominant).
       exercises: [
-        { id:'trotadora', name:'Caminata inclinada 10-12%', sets:1, reps:`${15+week*2} min`, rest:0, isCardio:true, note:'Inclinación alta. Sin trote.' },
-        { id:'stairmaster', name:'StairMaster constante', sets:1, reps:`${10+week} min`, rest:0, isCardio:true, note:'Nivel progresivo.' },
+        { id:'trotadora', name:'Caminata inclinada 10-12%', sets:1, reps:`${15+week*2} min`, rest:0, isCardio:true, note:'Calentamiento + Z2 base aeróbica. Inclinación alta, sin trote.' },
         { id:'jack_squat', name:'Jack Squat (ROM parcial)', ...jack, weight:wLeg(0.50), note:`Compuesto pierna: ${jack.sets} sets. ≈50% prensa (más glúteo). ROM parcial.` },
-        { id:'adductor_abductor', name:'Abductor (foco VMO)', sets:4, reps:15, weight:wLeg(0.25), rest:45, note:'VMO + glúteo medio: 4 sets ≈25% prensa (prioridad PFPS).' },
+        rdlExercise(week),
         { id:'mancuernas', name:'Step-up con mancuernas (banco bajo)', sets:stepSets, reps:10, weight:Math.min(15, Math.max(5, Math.round(rmBench*0.12/2.5)*2.5)), rest:75, unilateral:true, note:`UNILATERAL trekking-specific: ${stepSets} sets × 10 reps POR PIERNA. Mancuerna ≈12% banca.` },
-        { id:'hiper_inversa', name:'Hiperextensión inversa', sets:3, reps:12, weight:wLeg(0.15), rest:60, note:'Cadena posterior: 3 sets. Sin estrés rotuliano.' },
-        { id:'crossover', name:'Glute kickback en polea', sets:kickSets, reps:12, weight:10, rest:45, unilateral:true, note:`UNILATERAL: ${kickSets} sets × 12 reps POR PIERNA. Aislamiento glúteo mayor. Carga baja standalone.` }
+        { id:'adductor_abductor', name:'Abductor (foco VMO)', sets:4, reps:15, weight:wLeg(0.25), rest:45, note:'VMO + glúteo medio: 4 sets ≈25% prensa (prioridad PFPS).' },
+        { id:'stairmaster', name:'StairMaster (finisher Z2)', sets:1, reps:`${10+week} min`, rest:0, isCardio:true, note:'Finisher Z2 ascenso. Opcional si queda energía — la prioridad es la cadena posterior arriba.' }
       ]
     };
   };
@@ -2364,6 +2437,7 @@ if(DB.plan?.weeks){
     saveDB();
   }
 }
+migrateDayCV3();
 if(!DB.profile){ showOnboarding(); }
 else { showApp(); }
 

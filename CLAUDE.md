@@ -49,9 +49,9 @@ App web móvil PWA de entrenamiento para **Andrés "El Oso" Loaiza** (Medellín)
 node tests/test.js
 ```
 
-Exit 0 = pass, 1 = fail. Cobertura actual (115 tests): epley1RM/workWeight, phaseOfWeek/windowOf, OBJECTIVE windows, CATALOGO integrity (no stale ids, flags unilateral), HOWTO/TEMPO/EX_TYPE coverage por id, analyzeWeightPattern (constant/asc/desc/mixed/unilateral + drop), decideBump (double progression + knee + shortfalls + caps + cardio skip), PROG_CAPS recalibrados, applyProgression sync de peso probado (propaga proven, respeta cap, no sube en bump negativo, ignora drop), DEFAULT_DB.
+Exit 0 = pass, 1 = fail. Cobertura actual (120 tests): epley1RM/workWeight, phaseOfWeek/windowOf, OBJECTIVE windows, CATALOGO integrity (no stale ids, flags unilateral), HOWTO/TEMPO/EX_TYPE coverage por id, analyzeWeightPattern (constant/asc/desc/mixed/unilateral + drop), decideBump (double progression + knee + shortfalls + caps + cardio skip), PROG_CAPS recalibrados, applyProgression sync de peso probado (propaga proven, respeta cap, no sube en bump negativo, ignora drop), DAYC_ORDER + rdlExercise + migrateDayCV3 (rebuild RDL + idempotencia + preserva pesos), generateLocalPlan Day C composición, DEFAULT_DB.
 
-Harness: stub DOM/localStorage/navigator + `new Function(code + 'return {bindings};')()` para extraer const/function (indirect eval no expone bindings const). Bindings expuestos incluyen `DB` + `PROG_CAPS` para tests de `applyProgression` (mutan `DB.plan`). Test runner casero `test(name, fn)` con assertEq/assertDeep/assertTrue/assertFalse.
+Harness: stub DOM/localStorage/navigator + `new Function(code + 'return {bindings};')()` para extraer const/function (indirect eval no expone bindings const). Bindings expuestos incluyen `DB`, `PROG_CAPS`, `DAYC_ORDER`, `rdlExercise`, `migrateDayCV3`, `generateLocalPlan` para tests que mutan `DB.plan`. Test runner casero `test(name, fn)` con assertEq/assertDeep/assertTrue/assertFalse.
 
 **Update tests al agregar lógica testeable** (nueva función pura, nuevo dict por id, nueva regla progresión, nuevo flag CATALOGO).
 
@@ -96,6 +96,7 @@ Harness: stub DOM/localStorage/navigator + `new Function(code + 'return {binding
    - Press de banca (compound empuje)
    - Pulldown (compound tracción vertical)
    - Cada uno calcula 1RM por **fórmula híbrida**: Epley (≤10 reps) / Mayhew (>10 reps). Mayhew evita sobreestimación cuando user empuja tests >12 reps (Epley invalida ~15% arriba). Plan deriva pesos del resto por ratios NSCA.
+   - **Aviso reps altas** (en `calc()` onboarding): si user mete >20 reps en un test → banner naranja "peso muy liviano para estimar fuerza, el plan arrancará con cargas bajas, re-test con peso que falle a ~8-12 reps". Causa raíz documentada: baseline real de Andrés se hizo con 54/20/25 reps → 1RM al piso (cap r=30) → plan subestimado → re-edición masiva de peso. No bloquea (algunos no pueden añadir carga).
    - Migración v2 al boot: si `baseline.tests` existe y `formulaVersion !== 2`, recalcula 1RMs + regenera plan. Idempotente.
 
 ### 🏠 Inicio
@@ -112,6 +113,11 @@ Harness: stub DOM/localStorage/navigator + `new Function(code + 'return {binding
   - Sem 6-7 resistencia trekking (3-4×12-15 @ 55-60%, rest 60s)
   - Sem 8 taper (-1 set, intensidad mantenida)
   - 3 días/semana (A=pierna, B=tren superior, C=trekking-cardio)
+  - **Day C reestructurado** (`DAYC_ORDER`): `trotadora → jack_squat → peso_muerto (RDL) → step-up → abductor → stairmaster (finisher)`. 6 ejercicios (antes 7).
+    - **Cadena posterior vía PESO MUERTO RUMANO** (`peso_muerto`, hip hinge): reemplaza `hiper_inversa` (user reportó máquina mala) + glute kickback (`crossover` en Day C, incómodo). El RDL cubre glúteo + isquios + erectores en un movimiento PFPS-safe (hip-dominant, rodilla suave, sin estrés rotuliano) y es el mejor ejercicio de ascenso trekking. `peso_muerto` ya estaba pre-cableado (CATALOGO, EX_TYPE posterior, HOWTO/TEMPO) — solo no se usaba en el plan. Peso por fase vía `rdlExercise(week)`: adapt 3×12 @ wLeg(0.30)≈barra sola, str 4×8, end 3×15, taper 2×10. (`crossover` sigue en Day A como abducción VMO).
+    - **Orden por prioridad-en-fresco** (Simão 2012, efecto del orden): cadena posterior al frente. StairMaster (cardio redundante con Day A) → finisher Z2 opcional, lo más prescindible al final.
+    - Razón: telemetría mostró 0% de completado de la cadena posterior en Day C (sesión 57 min, 68% completado, se abandonaba al final — por equipo/comodidad, no fatiga). NO se bajó intensidad — el user sobre-rinde en carga; problema estructural + selección de ejercicio.
+    - `migrateDayCV3()` (boot, idempotente): reconstruye Day C de planes existentes — preserva pesos/reps progresados de sobrevivientes (jack_squat, step-up, abductor, stairmaster), elimina hiper_inversa + kickback, inserta RDL fresco, llama `tagPlanWithWindows()` para taggear el RDL.
 - **Volumen por máquina** (no uniforme):
   - Compuestos multi-joint: 3-5 sets
   - Sóleo: 4-6 sets (alta proporción fibra I, crítico descenso)

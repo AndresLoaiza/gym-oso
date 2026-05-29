@@ -3,6 +3,11 @@ Photos-*.zip
 photos/
 photos_jpg/
 
+# Datos personales de entrenamiento — NUNCA al repo público (GitHub Pages)
+my_data/
+elosogym-backup-*.json
+elosogym-refined-*.json
+
 # Python cache
 __pycache__/
 *.pyc

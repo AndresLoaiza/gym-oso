@@ -70,7 +70,7 @@ try {
     DEFAULT_DB, OBJECTIVE, CATALOGO, HOWTO, TEMPO, EX_TYPE,
     epley1RM, workWeight, phaseOfWeek, windowOf, isUnilateral,
     analyzeWeightPattern, decideBump, applyProgression, tagPlanWithWindows,
-    PROG_CAPS, DB
+    PROG_CAPS, DB, DAYC_ORDER, migrateDayCV3, rdlExercise, generateLocalPlan
   };`;
   exposed = new Function(code + '\n' + exposeReturn)();
 } catch(e) {
@@ -336,6 +336,63 @@ test('sync ignora drop de fatiga (topSet no propaga si dropDetected)', () => {
   const sets = [ {reps:10,weight:40,done:true},{reps:10,weight:30,done:true} ];
   applyProgression(_session('banco_plano', 'Banca', sets));
   assertEq(DB.plan.weeks[1][0].exercises[0].weight, 30, 'queda en plan, no sincroniza 40 (drop)');
+});
+
+console.log('\n--- Day C composición + orden (RDL posterior) ---');
+test('DAYC_ORDER: RDL al frente, stairmaster finisher, sin hiper_inversa/kickback', () => {
+  assertDeep(DAYC_ORDER, ['trotadora','jack_squat','peso_muerto','mancuernas','adductor_abductor','stairmaster']);
+});
+test('rdlExercise: peso_muerto posterior PFPS-safe, peso por fase', () => {
+  DB.profile = { baseline: { legPress1RM:66 } };
+  const r0 = rdlExercise(0);  // adapt
+  assertEq(r0.id, 'peso_muerto');
+  assertEq(r0.reps, 12); assertEq(r0.sets, 3);
+  assertEq(r0.weight, 20, 'adapt wLeg(0.30) de 66 → 20 (barra sola)');
+  assertEq(rdlExercise(3).reps, 8, 'str 4x8');
+});
+test('generateLocalPlan: Day C = trotadora..peso_muerto..stairmaster, sin hiper/kickback', () => {
+  DB.profile = { baseline: { legPress1RM:66, benchPress1RM:45, pulldown1RM:56 } };
+  generateLocalPlan();
+  const dayC = DB.plan.weeks[0][2];
+  assertTrue(/Trekking/i.test(dayC.focus), 'day index 2 = Trekking');
+  const ids = dayC.exercises.map(e => e.id);
+  assertEq(ids[0], 'trotadora', 'arranca con cardio warm-up');
+  assertEq(ids[ids.length-1], 'stairmaster', 'termina con finisher');
+  assertTrue(ids.includes('peso_muerto'), 'RDL presente');
+  assertFalse(ids.includes('hiper_inversa'), 'hiper_inversa fuera de Day C');
+  assertFalse(ids.includes('crossover'), 'glute kickback fuera de Day C');
+  assertTrue(ids.indexOf('peso_muerto') < ids.indexOf('adductor_abductor'), 'posterior antes que isolation');
+});
+test('migrateDayCV3: rebuild reemplaza hiper/kickback por RDL, preserva pesos', () => {
+  // plan viejo: orden antiguo con hiper_inversa + crossover kickback, pesos progresados
+  const oldDayC = { focus:'Trekking · Cardio funcional', exercises: [
+    { id:'trotadora', isCardio:true, reps:'15 min' },
+    { id:'stairmaster', isCardio:true, reps:'10 min' },
+    { id:'jack_squat', weight:32.5, reps:12 },
+    { id:'adductor_abductor', weight:32, reps:15 },
+    { id:'mancuernas', weight:7, reps:10, unilateral:true },
+    { id:'hiper_inversa', weight:10, reps:12 },
+    { id:'crossover', weight:10, reps:12, unilateral:true },
+  ]};
+  DB.profile = { baseline: { legPress1RM:66 } };
+  DB.plan = { weeks: [ [ {focus:'Pierna',exercises:[]}, {focus:'Tren',exercises:[]}, JSON.parse(JSON.stringify(oldDayC)) ] ] };
+  migrateDayCV3();
+  const ids = DB.plan.weeks[0][2].exercises.map(e => e.id);
+  assertDeep(ids, DAYC_ORDER);
+  assertFalse(ids.includes('hiper_inversa'), 'hiper_inversa eliminado');
+  assertFalse(ids.includes('crossover'), 'glute kickback eliminado');
+  const exById = id => DB.plan.weeks[0][2].exercises.find(e => e.id === id);
+  assertEq(exById('adductor_abductor').weight, 32, 'peso progresado preservado');
+  assertEq(exById('jack_squat').weight, 32.5, 'peso progresado preservado');
+  assertEq(exById('peso_muerto').weight, 20, 'RDL fresco wLeg(0.30)');
+  assertTrue(exById('peso_muerto').repMin !== undefined, 'RDL taggeado con window posterior');
+  assertTrue(DB.plan._dayCV3, 'flag seteado');
+});
+test('migrateDayCV3 idempotente (2ª corrida no cambia nada)', () => {
+  const before = JSON.stringify(DB.plan.weeks[0][2].exercises.map(e => e.id));
+  migrateDayCV3();
+  const after = JSON.stringify(DB.plan.weeks[0][2].exercises.map(e => e.id));
+  assertEq(after, before);
 });
 
 console.log('\n--- DB defaults ---');
