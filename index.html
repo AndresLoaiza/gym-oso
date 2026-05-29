@@ -1692,8 +1692,10 @@ function renderRutina(){
     saveDB();
   }
 
-  // Pedir check-in de rodilla si cambió de día (o nunca preguntado en esta sesión)
-  if(refChanged || !DB._kneeStatus || staleSession){
+  // Pedir check-in de rodilla si cambió de día, nunca preguntado, sesión stale,
+  // o sessionSets vacío (recuperación: modal de rodilla descartado sin elegir →
+  // quedaba sesión en blanco sin forma de reconstruirla. Ver bug S2D1 0/0).
+  if(refChanged || !DB._kneeStatus || staleSession || ssKeys.length === 0){
     askKneeCheckin(() => {
       DB._currentRef = newRef;
       const td = adaptSessionForKnee(ns.session, DB._kneeStatus || 'bien');
