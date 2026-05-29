@@ -926,6 +926,9 @@ function epley1RM(weight, reps){
   return Math.round((100 * w) / (52.2 + 41.9 * Math.exp(-0.055 * r)));
 }
 function workWeight(oneRM, pct){ return Math.round(oneRM * pct / 2.5) * 2.5; }
+/* Parse numérico tolerante a coma decimal (es-CO: "7,5" → 7.5). type=number
+   nativo rechaza la coma y +value da NaN → los inputs de peso usan type=text. */
+function parseNum(v){ return parseFloat(String(v).replace(',', '.')) || 0; }
 
 /* ============= OBJETIVO + WINDOWS =============
    Objetivo único: trekking nivel 4 con PFPS. Define ventanas de reps por
@@ -1366,7 +1369,7 @@ function renderOnbStep(){
      </ul>`,
     `<h2>Tu perfil</h2>
      <p>Datos básicos para calibrar la app.</p>
-     <label class="field"><span class="lbl">Peso corporal (kg)</span><input class="input" id="ob-w" type="number" inputmode="decimal" value="${obData.weight}"></label>
+     <label class="field"><span class="lbl">Peso corporal (kg)</span><input class="input" id="ob-w" type="text" inputmode="decimal" value="${obData.weight}"></label>
      <label class="field"><span class="lbl">Estatura (cm)</span><input class="input" id="ob-h" type="number" inputmode="numeric" value="${obData.height}"></label>
      <label class="field"><span class="lbl">Edad</span><input class="input" id="ob-a" type="number" inputmode="numeric" value="${obData.age}"></label>`,
     `<h2>Tu condición clínica</h2>
@@ -1419,7 +1422,7 @@ function renderOnbStep(){
           </div>
         </div>
         <div style="display:flex; gap:8px;">
-          <label class="field" style="flex:1;"><span class="lbl">Peso (kg)</span><input class="input ob-w" data-id="${id}" type="number" inputmode="decimal" value="${t.w}"></label>
+          <label class="field" style="flex:1;"><span class="lbl">Peso (kg)</span><input class="input ob-w" data-id="${id}" type="text" inputmode="decimal" value="${t.w}"></label>
           <label class="field" style="flex:1;"><span class="lbl">Reps</span><input class="input ob-r" data-id="${id}" type="number" inputmode="numeric" value="${t.r}"></label>
         </div>
       </div>
@@ -1445,7 +1448,7 @@ function renderOnbStep(){
       $('#ob-1rm').innerHTML = '<b>1RM estimados:</b><br>' + rows.map(r => `· ${r.name}: <b style="color:var(--accent)">${r.rm} kg</b>`).join('<br>') + aviso;
     };
     $$('#ob-tests .ob-w').forEach(inp => inp.addEventListener('input', e => {
-      obData.tests[e.target.dataset.id].w = +e.target.value || 0; calc();
+      obData.tests[e.target.dataset.id].w = parseNum(e.target.value); calc();
     }));
     $$('#ob-tests .ob-r').forEach(inp => inp.addEventListener('input', e => {
       obData.tests[e.target.dataset.id].r = +e.target.value || 0; calc();
@@ -1457,7 +1460,7 @@ function renderOnbStep(){
 
 $('#ob-next').addEventListener('click', async () => {
   if(obStep === 1){
-    obData.weight = +$('#ob-w').value || 75;
+    obData.weight = parseNum($('#ob-w').value) || 75;
     obData.height = +$('#ob-h').value || 175;
     obData.age = +$('#ob-a').value || 32;
   }
@@ -1999,7 +2002,7 @@ function renderSets(i){
     row.className = 'set-row' + (s.userAdded ? ' with-del' : '');
     const weightCell = hideWeight
       ? `<div class="set-empty">—</div>`
-      : `<input type="number" inputmode="decimal" value="${s.weight}" placeholder="kg">`;
+      : `<input type="text" inputmode="decimal" value="${s.weight}" placeholder="kg">`;
     const needsFill = textReps && (s.reps === 0 || s.reps === '0' || s.reps === '');
     const repsVal = needsFill ? repsTpl : s.reps;
     if(needsFill && repsTpl) { s.reps = repsVal; saveDB(); }
@@ -2035,7 +2038,8 @@ function renderSets(i){
     if(!hideWeight){
       wEl.addEventListener('change', e => {
         const oldW = s.weight;
-        s.weight = +e.target.value || 0;
+        s.weight = parseNum(e.target.value);
+        e.target.value = s.weight;  // normaliza visualmente coma→punto
         track('set_edit', { exId: ex.id, idx: j, field: 'weight', old: oldW, new: s.weight });
         saveDB();
       });

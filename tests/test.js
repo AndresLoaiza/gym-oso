@@ -68,7 +68,7 @@ let exposed;
 try {
   const exposeReturn = `return {
     DEFAULT_DB, OBJECTIVE, CATALOGO, HOWTO, TEMPO, EX_TYPE,
-    epley1RM, workWeight, phaseOfWeek, windowOf, isUnilateral,
+    epley1RM, workWeight, parseNum, phaseOfWeek, windowOf, isUnilateral,
     analyzeWeightPattern, decideBump, applyProgression, tagPlanWithWindows,
     PROG_CAPS, DB, DAYC_ORDER, migrateDayCV3, rdlExercise, generateLocalPlan
   };`;
@@ -106,6 +106,9 @@ test('epley1RM 40×20 Mayhew >0', () => assertTrue(epley1RM(40, 20) > 0));
 test('epley1RM cap r=30', () => assertEq(epley1RM(40, 100), epley1RM(40, 30)));
 test('workWeight rounds to 2.5 (100×0.51 → 50)', () => assertEq(workWeight(100, 0.51), 50));
 test('workWeight rounds up (100×0.52 → 52.5)', () => assertEq(workWeight(100, 0.52), 52.5));
+test('parseNum coma decimal "7,5" → 7.5', () => assertEq(parseNum('7,5'), 7.5));
+test('parseNum punto "37.5" → 37.5', () => assertEq(parseNum('37.5'), 37.5));
+test('parseNum vacío/inválido → 0', () => { assertEq(parseNum(''), 0); assertEq(parseNum('abc'), 0); });
 
 console.log('\n--- Periodización ---');
 test('phaseOfWeek 0 → adapt', () => assertEq(phaseOfWeek(0), 'adapt'));

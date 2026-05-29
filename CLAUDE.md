@@ -49,7 +49,7 @@ App web móvil PWA de entrenamiento para **Andrés "El Oso" Loaiza** (Medellín)
 node tests/test.js
 ```
 
-Exit 0 = pass, 1 = fail. Cobertura actual (120 tests): epley1RM/workWeight, phaseOfWeek/windowOf, OBJECTIVE windows, CATALOGO integrity (no stale ids, flags unilateral), HOWTO/TEMPO/EX_TYPE coverage por id, analyzeWeightPattern (constant/asc/desc/mixed/unilateral + drop), decideBump (double progression + knee + shortfalls + caps + cardio skip), PROG_CAPS recalibrados, applyProgression sync de peso probado (propaga proven, respeta cap, no sube en bump negativo, ignora drop), DAYC_ORDER + rdlExercise + migrateDayCV3 (rebuild RDL + idempotencia + preserva pesos), generateLocalPlan Day C composición, DEFAULT_DB.
+Exit 0 = pass, 1 = fail. Cobertura actual (123 tests): epley1RM/workWeight, parseNum (coma decimal es-CO), phaseOfWeek/windowOf, OBJECTIVE windows, CATALOGO integrity (no stale ids, flags unilateral), HOWTO/TEMPO/EX_TYPE coverage por id, analyzeWeightPattern (constant/asc/desc/mixed/unilateral + drop), decideBump (double progression + knee + shortfalls + caps + cardio skip), PROG_CAPS recalibrados, applyProgression sync de peso probado (propaga proven, respeta cap, no sube en bump negativo, ignora drop), DAYC_ORDER + rdlExercise + migrateDayCV3 (rebuild RDL + idempotencia + preserva pesos), generateLocalPlan Day C composición, DEFAULT_DB.
 
 Harness: stub DOM/localStorage/navigator + `new Function(code + 'return {bindings};')()` para extraer const/function (indirect eval no expone bindings const). Bindings expuestos incluyen `DB`, `PROG_CAPS`, `DAYC_ORDER`, `rdlExercise`, `migrateDayCV3`, `generateLocalPlan` para tests que mutan `DB.plan`. Test runner casero `test(name, fn)` con assertEq/assertDeep/assertTrue/assertFalse.
 
