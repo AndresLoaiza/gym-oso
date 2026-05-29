@@ -31,6 +31,7 @@ App web móvil PWA de entrenamiento para **Andrés "El Oso" Loaiza** (Medellín)
 - `index.html` (HTML + JS inline, sin frameworks ni bundlers; el CSS vive en `elosogym.css`)
 - `elosogym.css` → **design system** (Claude Design handoff): tokens `:root` (color, tipografía, espaciado, radios, motion) + componentes con el vocabulario de clases real de la app. Retematizar = cambiar variables. Drop-in pixel-idéntico al `<style>` inline anterior.
 - `fonts/` → 16 woff2 **self-hosted** (Bebas Neue · DM Sans 300-700 · DM Mono 400/500, OFL, subsets latin+latin-ext). Sin dependencia de Google Fonts → funciona 100% offline.
+- **Mascota El Oso** (`BEARS` dict + `bearSVG(name,size)` en `index.html`): 5 osos chibi SVG **inline** (rest/dumbbell/press/bike/stairs), del design system. Offline, sin requests. **Regla: solo en estados positivos/motivacionales** — logo header (dumbbell 30px), bienvenida onboarding (dumbbell 140px), card "Hoy" (`bearForFocus`), plan completo + fin de sesión + modal de progresión (rest). NUNCA en carga/error/destructivo. Las fotos de máquinas (`thumb()`/`catalogo-imgs.js`) NO se reemplazan — el oso es aditivo.
 - `manifest.json` + `sw.js` → PWA instalable + offline cache (precachea `elosogym.css` + los 16 fonts)
 - `catalogo-imgs.js` → 25 thumbnails base64 (229 KB)
 - `Chart.js@4.4.1` vía CDN para gráficas
@@ -101,7 +102,7 @@ Harness: stub DOM/localStorage/navigator + `new Function(code + 'return {binding
    - Migración v2 al boot: si `baseline.tests` existe y `formulaVersion !== 2`, recalcula 1RMs + regenera plan. Idempotente.
 
 ### 🏠 Inicio
-- Card "Hoy" con próxima sesión del plan (Sem X · Día Y · Focus)
+- Card "Hoy" con próxima sesión del plan (Sem X · Día Y · Focus) + **oso** (`bearForFocus`: press/dumbbell/stairs según focus)
 - Stats: sesiones, series, semanas activas
 - Guía de carga PFPS (RIR, ROM, reglas)
 - **Glosario clickeable** con definiciones (RIR, ROM, PFPS, VMO, 1RM, Epley, etc.)
