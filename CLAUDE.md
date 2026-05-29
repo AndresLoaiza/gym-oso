@@ -28,12 +28,13 @@ App web móvil PWA de entrenamiento para **Andrés "El Oso" Loaiza** (Medellín)
 
 ## Stack
 
-- `index.html` (~1300 líneas HTML + CSS + JS inline, sin frameworks ni bundlers)
-- `manifest.json` + `sw.js` → PWA instalable + offline cache
+- `index.html` (HTML + JS inline, sin frameworks ni bundlers; el CSS vive en `elosogym.css`)
+- `elosogym.css` → **design system** (Claude Design handoff): tokens `:root` (color, tipografía, espaciado, radios, motion) + componentes con el vocabulario de clases real de la app. Retematizar = cambiar variables. Drop-in pixel-idéntico al `<style>` inline anterior.
+- `fonts/` → 16 woff2 **self-hosted** (Bebas Neue · DM Sans 300-700 · DM Mono 400/500, OFL, subsets latin+latin-ext). Sin dependencia de Google Fonts → funciona 100% offline.
+- `manifest.json` + `sw.js` → PWA instalable + offline cache (precachea `elosogym.css` + los 16 fonts)
 - `catalogo-imgs.js` → 25 thumbnails base64 (229 KB)
 - `Chart.js@4.4.1` vía CDN para gráficas
 - Persistencia: `localStorage` clave **`elosoGymV2`**
-- Fuentes: Google Fonts (Bebas Neue, DM Sans, DM Mono)
 - Theme: dark + acento lila violeta `#c4a7ff`, acento2 naranja `#ff6b35`
 
 ## Scripts auxiliares
