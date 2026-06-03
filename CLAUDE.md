@@ -224,8 +224,10 @@ Buffer local en `DB.telemetry.events` (FIFO cap 2000, ~120KB). 100% local — nu
 - `set_check { exId, idx, done, reps, weight }`
 - `rest_start { kind, sec }` — `serie` | `ejercicio` | `hold` (aguante isométrico)
 - `ex_swap { from, to, idx, reason }` — cambio de ejercicio (ocupada/mala/dolor)
-- `ex_note { exId, idx, len }` — nota por ejercicio
-- `session_note { len }` — comentario de la sesión
+- `ex_note { exId, idx, len, text }` — nota por ejercicio (incluye **texto** para análisis)
+- `session_note { len, text, planRef }` — comentario de la sesión (incluye **texto** para análisis)
+
+**Nota:** `ex_note`/`session_note` guardan el **texto completo** de los comentarios en el buffer de telemetría → el export de telemetría (el que el user pasa a Claude para análisis de comportamiento) ya trae los comentarios, no solo `len`. El texto también vive en `sessions[]` (`session.note`, `exercise.userNote`) para el backup JSON.
 
 **Análisis offline:** user exporta JSON desde Config → pasa a Claude → identifica:
 - HOWTO/glosario más abiertos = conceptos confusos

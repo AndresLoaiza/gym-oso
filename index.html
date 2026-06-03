@@ -1839,7 +1839,7 @@ function renderRutinaInner(ns, td){
       const i = inp.dataset.i;
       if(!DB.sessionSets[i]) return;
       DB.sessionSets[i].userNote = inp.value;
-      track('ex_note', { exId: DB.sessionSets[i].id, idx: i, len: inp.value.length });
+      track('ex_note', { exId: DB.sessionSets[i].id, idx: i, len: inp.value.length, text: inp.value });
       saveDB();
     });
   });
@@ -2110,7 +2110,7 @@ $('#finish-session').addEventListener('click', () => {
   const startEv = [...(DB.telemetry?.events||[])].reverse().find(e => e.type === 'session_start' && e.sid === DB.telemetry?.sessionId);
   const durSec = startEv ? Math.round((new Date() - new Date(startEv.t))/1000) : null;
   track('session_finish', { planRef: session.planRef, knee: session.kneeStatus, totalSets, doneSets, durSec, completedRatio: totalSets ? doneSets/totalSets : 0 });
-  if(session.note) track('session_note', { len: session.note.length });
+  if(session.note) track('session_note', { len: session.note.length, text: session.note, planRef: session.planRef });
   DB.sessions.push(session);
   DB.sessionSets = {};
   DB._currentRef = null;
