@@ -71,15 +71,16 @@ Claves efímeras (prefijo `_`, no en `DEFAULT_DB`): `_currentRef`, `_kneeStatus`
 - `renderRutinaInner(ns, td)`: pinta una card por ejercicio.
 
 ### Card de ejercicio (renderRutinaInner)
-- Header: thumb + nombre + chips (summary done, descanso, tempo, unilateral).
-- Chips/botones: `ℹ Cómo usar` (si `HOWTO[id]`), `+ Serie`, `⏱ Aguante Ns` (solo isométricos, ver §8), `⏱ Serie`, `⏱ Cambio ej. 2:30`, `⇄ Cambiar` (swap, §9).
-- **Input `📝 Nota`** por ejercicio (`data-act="ex-note"`) → `sessionSets[i].userNote` (§10).
+- Header: thumb + nombre + chips (summary done, descanso, tempo, unilateral) + **toggle `📝`** (`.note-toggle`, abre/cierra la nota inline, estado `_noteOpen`).
+- **Fila única de 3 acciones** (`.ex-act`, touch ≥40px): `+ Serie` · **un timer contextual** (`⏱ Aguante Ns` en holds / `⏱ Descanso M:SS` en normales, nunca ambos) · `⇄ Cambiar` (swap, §9). `ℹ Cómo usar` arriba si hay `HOWTO[id]`.
+- El descanso **entre ejercicios** (2:30) ya no es botón: auto-dispara al completar la card si queda otro ejercicio.
+- **Input `📝 Nota`** por ejercicio (`data-act="ex-note"`, oculto hasta abrir el toggle) → `sessionSets[i].userNote` (§10).
 - `renderSets(i)`: filas editables. Detecta time-based (`/s$|min/` en reps) → columnas colapsan a `# | Tiempo | ✓`, input texto, peso `—`.
 - **Marcar ✓** (`set.done`): dispara `startTimer(rest,'serie')` + `vibrate(50)`. Si todos los sets done → **auto-colapsa** la card (salvo que el user la haya re-expandido, `_userExpanded`).
 - `updateProgress()`: barra `done/total series`.
 
 ### Salida
-- **Textarea `#session-note`** (bajo la lista) → `DB._sessionNote` (§10).
+- **`<details>` `📝 Comentario de la sesión`** (bajo la lista, colapsable, auto-`open` si hay texto) → `DB._sessionNote` (§10).
 - `+ Añadir ejercicio`: modal catálogo (no-cardio), agrega a `sessionSets` con rest 75s.
 - `↺ Reiniciar sesión`: vacía `sessionSets`, re-pregunta rodilla. Track `session_abandon`.
 - `✓ Finalizar sesión`: serializa a `sessions[]` (incluye `note` + `userNote` por ejercicio), corre `applyProgression()` si `autoProgress`, muestra modal de progresión o de celebración.

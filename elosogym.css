@@ -344,6 +344,13 @@
   .set-row.set-header .set-lbl { font-size: 10px; text-transform: uppercase; color: var(--muted); font-family: var(--font-mono); text-align: center; letter-spacing: 0.5px; }
   .chip { display: inline-block; padding: 2px 8px; border-radius: var(--radius-pill); background: var(--surface2); color: var(--muted); font-size: 11px; font-family: var(--font-mono); margin-top: var(--space-1); }
   .set-row .del:active { opacity: 1; background: rgba(248,113,113,0.15); }
+  /* Toggle de nota 📝 en header de ejercicio: oculto-discreto si vacío, resaltado si hay nota */
+  .note-toggle { flex: 0 0 auto; align-self: flex-start; width: 40px; height: 40px; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--surface2); font-size: 15px; line-height: 1; opacity: 0.45; cursor: pointer; transition: opacity 0.2s, border-color 0.2s, background 0.2s; }
+  .note-toggle:hover { opacity: 0.8; }
+  .note-toggle.has-note, .note-toggle.open { opacity: 1; border-color: var(--accent2); background: var(--accent2-soft); }
+  /* Acciones de ejercicio: touch target ≥40px (dedos sudados en sesión) */
+  .ex-actions .ex-act { min-height: 40px; cursor: pointer; }
+  .ex-act-hold { background: var(--accent2-soft); color: var(--accent2); border-color: var(--accent2); font-weight: 700; }
 
   /* PROGRESS */
   .progress-bar { height: 8px; background: var(--surface2); border-radius: var(--radius-sm); overflow: hidden; margin: 8px 0; }

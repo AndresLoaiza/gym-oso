@@ -168,14 +168,21 @@ Harness: stub DOM/localStorage/navigator + `new Function(code + 'return {binding
 - Chip "⏱ Descanso: M:SS" por ejercicio (rest específico)
 - Series con kg/reps editables + check + 🗑 borrar individual (solo user-added; defaults protegidos)
 - **Time-only ex** (wall sit, cardio): columnas colapsan a `# | Tiempo | ✓`, input `type=text`, peso muestra "—"
-- Timer descanso diferenciado:
+- **Acciones por card — fila única de 3 botones** (reorg UX, evita el wrap de 5 botones):
+  - `+ Serie` · **un solo timer contextual** · `⇄ Cambiar`. Touch target ≥40px (`.ex-act`).
+  - El timer contextual es **uno solo**: holds → `⏱ Aguante Ns` (`.ex-act-hold`, naranja) · resto → `⏱ Descanso M:SS` (serie). No se muestran ambos.
+- Timer descanso diferenciado (banner flotante `startTimer(sec, kind)`):
   - **Serie** (naranja): usa `rest` del ejercicio, auto-dispara al marcar ✓
-  - **Cambio ejercicio** (lila): 2:30 fijo
-  - Label visible en banner del timer
+  - **Aguante** (naranja): cuenta regresiva del hold, vibra fuerte + beep al terminar
+  - **Cambio ejercicio** (lila): 2:30, **auto-dispara** al completar una card si queda otro ejercicio (antes botón manual — eliminado). Telemetría `rest_start {kind:'ejercicio', auto:true}`.
+  - Label visible en banner del timer (`Serie`/`Aguante`/`Cambio`)
 - "+ Añadir ejercicio" desde catálogo (auto-asigna rest 75s)
 - **⇄ Cambiar ejercicio** (botón por card): para máquina ocupada/mala/dolor. `suggestSwaps(exId)` propone alternativas del CATALOGO que comparten ≥1 músculo (`muscleTokens`), no-cardio, knee `safe|caution`, orden safe-primero. Modal con chips de razón (ocupada/mala/dolor → `_swapReason`). `doSwap()` reemplaza id/name/note/unilateral **conservando reps/peso** (reconstruye sets si cambia condición unilateral). Telemetría `ex_swap {from,to,reason}`.
 - **⏱ Aguante (cronómetro isométrico)**: solo ejercicios de aguante (`isHoldEx`: time-based + `noWeight` + no cardio, ej. wall sit). Botón `⏱ Aguante Ns` (`parseHoldSec` parsea `'30s'`/`'2 min'`) → `startTimer(sec,'hold')` cuenta regresiva. **Al terminar vibra fuerte (`vibrate([200,100,200,100,200])`) + beep** para avisar fin del hold. Cardio NO lleva este timer (decisión user).
-- **Comentarios de sesión** (para análisis de comportamiento): input `📝 Nota` por ejercicio (`sessionSets[i].userNote` → `session.exercises[i].userNote`, telemetría `ex_note`) + textarea `📝 Comentario de la sesión` (`_sessionNote` → `session.note`, telemetría `session_note`). Se muestran en Historial (detalle). Todo input escapado con `escHtml()`.
+- **Comentarios de sesión** (para análisis de comportamiento, texto completo en telemetría — ver §Telemetría):
+  - **Por ejercicio**: toggle `📝` en el header de la card (`.note-toggle`, estado `_noteOpen`). Oculto si vacío, resaltado (`has-note`) si hay nota, abre input inline 1 tap. `sessionSets[i].userNote` → `session.exercises[i].userNote`, telemetría `ex_note`.
+  - **De sesión**: `<details>` colapsable al pie de la rutina (no ocupa espacio idle; auto-`open` si ya hay texto). `_sessionNote` → `session.note`, telemetría `session_note`.
+  - Se muestran en Historial (detalle). Todo input escapado con `escHtml()`.
 - "↺ Reiniciar esta sesión" (descarta progreso, re-pregunta rodilla)
 - Action bar: "✓ Finalizar sesión"
 

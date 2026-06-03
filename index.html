@@ -88,7 +88,10 @@
     <div class="progress-bar"><div class="fill" id="rutina-fill" style="width:0"></div></div>
     <div class="small" id="rutina-progress-text">0 / 0 series</div>
     <div id="rutina-list" style="margin-top:12px"></div>
-    <textarea class="input" id="session-note" placeholder="📝 Comentario de la sesión (cómo te sentiste, energía, dolor, qué cambiarías…)" style="margin-top:14px;min-height:64px;font-size:13px;"></textarea>
+    <details id="session-note-wrap" style="margin-top:14px;">
+      <summary>📝 Comentario de la sesión</summary>
+      <textarea class="input" id="session-note" placeholder="Cómo te sentiste, energía, dolor, qué cambiarías…" style="margin-top:10px;min-height:64px;font-size:13px;"></textarea>
+    </details>
     <button class="btn ghost" id="add-exercise" style="margin-top:10px">+ Añadir ejercicio</button>
     <button class="btn ghost danger" id="reset-session" style="margin-top:8px; color:var(--danger); border-color:var(--danger);">↺ Reiniciar esta sesión</button>
   </section>
@@ -239,6 +242,7 @@ let wakeLock = null;
 // UI state — set de índices ex colapsados en card actual (resetea al cambiar sesión)
 let _collapsedEx = new Set();
 let _userExpanded = new Set();  // ex que user re-expandió manualmente (no auto-colapsar)
+let _noteOpen = new Set();      // ex cuya nota 📝 está abierta (toggle en header)
 
 function loadDB(){
   try { return Object.assign({}, DEFAULT_DB, JSON.parse(localStorage.getItem(STORE_KEY) || '{}')); }
@@ -1724,6 +1728,7 @@ function renderRutina(){
       // Iniciar sessionId telemetría + reset UI state collapse
       _collapsedEx.clear();
       _userExpanded.clear();
+      _noteOpen.clear();
       if(DB.telemetry){
         DB.telemetry.sessionId = uid();
         track('session_start', { planRef: newRef, knee: DB._kneeStatus, exCount: td.exercises.length, focus: td.focus });
@@ -1775,21 +1780,27 @@ function renderRutinaInner(ns, td){
       ? `<div class="n">#</div><div class="set-lbl">Tiempo</div><div class="set-lbl">✓</div>`
       : `<div class="n">#</div><div class="set-lbl">${ex.isCardio?'Tiempo':'Reps'}</div><div class="set-lbl">${wHeader}</div><div class="set-lbl">✓</div>`;
     const hasHowto = !!HOWTO[ex.id];
-    const howtoBtn = hasHowto ? `<button class="btn small" data-act="howto" data-id="${ex.id}" style="flex:0 0 auto;">ℹ Cómo usar</button>` : '';
-    div.innerHTML = `<div class="row-with-thumb ex-header" data-act="toggle-collapse" data-i="${idx}">${thumb(ex.id,'md')}<div class="grow"><h3>${ex.name} <span class="ex-collapse-hint">${collapseHint}</span></h3><div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px;">${summaryChip}${restChip}${tempoChip}${uniChip}</div></div></div>
+    const howtoBtn = hasHowto ? `<button class="btn small ex-act" data-act="howto" data-id="${ex.id}" style="flex:0 0 auto;">ℹ Cómo usar</button>` : '';
+    // Nota 📝: oculta si vacía + no abierta. Toggle en header. Indicador si hay texto.
+    const hasNote = !!(ex.userNote && ex.userNote.trim());
+    const noteShown = hasNote || _noteOpen.has(idx);
+    const noteBtn = `<button class="note-toggle${hasNote ? ' has-note' : ''}" data-act="note-toggle" data-i="${idx}" title="Nota del ejercicio" aria-label="Nota del ejercicio">📝</button>`;
+    // Un solo timer contextual: holds → aguante (cuenta regresiva + vibra) · resto → descanso de serie.
+    const timerBtn = isHoldEx(ex)
+      ? `<button class="btn small ex-act ex-act-hold" data-act="hold" data-i="${idx}" data-h="${parseHoldSec(ex.sets[0]?.reps)}">⏱ Aguante ${parseHoldSec(ex.sets[0]?.reps)}s</button>`
+      : (restSec > 0 ? `<button class="btn small ex-act" data-act="rest-serie" data-i="${idx}" data-r="${restSec}">⏱ Descanso ${restLabel}</button>` : '');
+    div.innerHTML = `<div class="row-with-thumb ex-header" data-act="toggle-collapse" data-i="${idx}">${thumb(ex.id,'md')}<div class="grow"><h3>${ex.name} <span class="ex-collapse-hint">${collapseHint}</span></h3><div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px;">${summaryChip}${restChip}${tempoChip}${uniChip}</div></div>${noteBtn}</div>
       <div class="collapsible">
       ${howtoBtn ? `<div style="margin:6px 0 4px;">${howtoBtn}</div>` : ''}
       ${ex.note ? `<div class="pfps-warn">${ex.note}</div>` : ''}
       <div class="set-row set-header${timeOnly?' time-only':''}">${headerCells}</div>
       <div id="sets-${idx}"></div>
-      <div class="btn-row" style="margin-top:8px;flex-wrap:wrap;gap:6px;">
-        <button class="btn small" data-act="add-set" data-i="${idx}">+ Serie</button>
-        ${isHoldEx(ex) ? `<button class="btn small" data-act="hold" data-i="${idx}" data-h="${parseHoldSec(ex.sets[0]?.reps)}" style="background:rgba(255,107,53,0.15);color:var(--accent2);">⏱ Aguante ${parseHoldSec(ex.sets[0]?.reps)}s</button>` : ''}
-        ${restSec > 0 ? `<button class="btn small" data-act="rest-serie" data-i="${idx}" data-r="${restSec}">⏱ Serie ${restLabel}</button>` : ''}
-        <button class="btn small" data-act="rest-ex" data-i="${idx}" data-r="150">⏱ Cambio ej. 2:30</button>
-        <button class="btn small" data-act="swap" data-i="${idx}">⇄ Cambiar</button>
+      <div class="btn-row ex-actions" style="margin-top:8px;flex-wrap:wrap;gap:6px;">
+        <button class="btn small ex-act" data-act="add-set" data-i="${idx}">+ Serie</button>
+        ${timerBtn}
+        <button class="btn small ex-act" data-act="swap" data-i="${idx}">⇄ Cambiar</button>
       </div>
-      <input class="input" data-act="ex-note" data-i="${idx}" placeholder="📝 Nota (ej. máquina ocupada, rodilla rara…)" value="${escHtml(ex.userNote)}" style="margin-top:8px;font-size:13px;">
+      <input class="input ex-note-input" data-act="ex-note" data-i="${idx}" placeholder="📝 Nota (ej. máquina ocupada, rodilla rara…)" value="${escHtml(ex.userNote)}" style="margin-top:8px;font-size:13px;${noteShown ? '' : 'display:none;'}">
       </div>`;
     list.appendChild(div);
     renderSets(idx);
@@ -1820,6 +1831,16 @@ function renderRutinaInner(ns, td){
         track('ex_collapse_toggle', { exId: DB.sessionSets[i].id, idx: i, collapsed: willCollapse });
         return;
       }
+      if(b.dataset.act === 'note-toggle'){
+        const card = list.querySelector(`.card[data-ex-idx="${i}"]`);
+        const inp = card?.querySelector('.ex-note-input');
+        if(!inp) return;
+        const willShow = inp.style.display === 'none';
+        if(willShow){ _noteOpen.add(i); inp.style.display = ''; inp.focus(); }
+        else { _noteOpen.delete(i); inp.style.display = 'none'; }
+        b.classList.toggle('open', willShow);
+        return;
+      }
       if(b.dataset.act === 'add-set'){
         const last = DB.sessionSets[i].sets.at(-1) || { reps: 10, weight: 0, done: false };
         DB.sessionSets[i].sets.push({ reps: last.reps, weight: last.weight, done: false, userAdded: true });
@@ -1839,13 +1860,19 @@ function renderRutinaInner(ns, td){
       const i = inp.dataset.i;
       if(!DB.sessionSets[i]) return;
       DB.sessionSets[i].userNote = inp.value;
+      const tog = list.querySelector(`.note-toggle[data-i="${i}"]`);
+      if(tog) tog.classList.toggle('has-note', !!inp.value.trim());
       track('ex_note', { exId: DB.sessionSets[i].id, idx: i, len: inp.value.length, text: inp.value });
       saveDB();
     });
   });
 
   const noteEl = $('#session-note');
-  if(noteEl) noteEl.value = DB._sessionNote || '';
+  if(noteEl){
+    noteEl.value = DB._sessionNote || '';
+    const wrap = $('#session-note-wrap');
+    if(wrap && DB._sessionNote) wrap.open = true;  // abre si ya hay comentario
+  }
   updateProgress();
   if(DB.settings.wake) requestWake();
 }
@@ -1932,14 +1959,18 @@ function renderSets(i){
               sum.style.color = '#7be495';
             }
           }
-          // scroll a próximo ej no colapsado
+          // scroll a próximo ej no colapsado + auto-descanso entre ejercicios (2:30)
           const cards = document.querySelectorAll('#rutina-list .card');
+          let nextFound = false;
           for(const c of cards){
             if(!c.classList.contains('collapsed') && c.dataset.exIdx !== undefined){
               c.scrollIntoView({ behavior:'smooth', block:'start' });
+              nextFound = true;
               break;
             }
           }
+          // Acabaste un ejercicio y queda otro → descanso de cambio auto (real: cambias de máquina).
+          if(nextFound){ track('rest_start', { kind:'ejercicio', sec:150, auto:true }); startTimer(150, 'ejercicio'); }
         }, 400);
       }
     });
