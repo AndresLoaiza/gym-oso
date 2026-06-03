@@ -70,7 +70,8 @@ try {
     DEFAULT_DB, OBJECTIVE, CATALOGO, HOWTO, TEMPO, EX_TYPE,
     epley1RM, workWeight, parseNum, phaseOfWeek, windowOf, isUnilateral,
     analyzeWeightPattern, decideBump, applyProgression, tagPlanWithWindows,
-    PROG_CAPS, DB, DAYC_ORDER, migrateDayCV3, rdlExercise, generateLocalPlan
+    PROG_CAPS, DB, DAYC_ORDER, migrateDayCV3, rdlExercise, generateLocalPlan,
+    parseHoldSec, isHoldEx, muscleTokens, suggestSwaps, escHtml
   };`;
   exposed = new Function(code + '\n' + exposeReturn)();
 } catch(e) {
@@ -402,6 +403,49 @@ console.log('\n--- DB defaults ---');
 test('DB.settings.autoProgress default true', () => assertEq(DEFAULT_DB.settings.autoProgress, true));
 test('DB.settings.telemetry default true', () => assertEq(DEFAULT_DB.settings.telemetry, true));
 test('DB.telemetry events array', () => assertTrue(Array.isArray(DEFAULT_DB.telemetry.events)));
+
+console.log('\n--- Aguante isométrico: parseHoldSec / isHoldEx ---');
+test('parseHoldSec "30s" → 30', () => assertEq(parseHoldSec('30s'), 30));
+test('parseHoldSec "45 s" → 45', () => assertEq(parseHoldSec('45 s'), 45));
+test('parseHoldSec "2 min" → 120', () => assertEq(parseHoldSec('2 min'), 120));
+test('parseHoldSec número 40 → 40', () => assertEq(parseHoldSec(40), 40));
+test('parseHoldSec "12" reps → 12', () => assertEq(parseHoldSec('12'), 12));
+test('parseHoldSec vacío → 0', () => assertEq(parseHoldSec(''), 0));
+test('isHoldEx wall sit (noWeight+30s) → true', () =>
+  assertTrue(isHoldEx({ noWeight: true, isCardio: false, sets: [{ reps: '30s' }] })));
+test('isHoldEx cardio → false', () =>
+  assertFalse(isHoldEx({ noWeight: true, isCardio: true, sets: [{ reps: '10 min' }] })));
+test('isHoldEx ejercicio con peso → false', () =>
+  assertFalse(isHoldEx({ noWeight: false, isCardio: false, sets: [{ reps: 12 }] })));
+test('isHoldEx reps numéricas sin tiempo (noWeight) → false', () =>
+  assertFalse(isHoldEx({ noWeight: true, isCardio: false, sets: [{ reps: 0 }] })));
+
+console.log('\n--- Swap de ejercicio: muscleTokens / suggestSwaps ---');
+test('muscleTokens divide por ·', () =>
+  assertDeep(muscleTokens('Cuádriceps · Glúteo'), ['cuádriceps', 'glúteo']));
+test('muscleTokens divide por / y +', () =>
+  assertDeep(muscleTokens('Aductores / Abductores'), ['aductores', 'abductores']));
+test('suggestSwaps prensa → incluye hack squat (mismo músculo, no cardio)', () => {
+  const ids = suggestSwaps('leg_press_45').map(c => c.id);
+  assertTrue(ids.includes('sentadilla_hack'), 'hack squat sugerido');
+});
+test('suggestSwaps nunca incluye cardio', () => {
+  const all = suggestSwaps('leg_press_45');
+  assertFalse(all.some(c => c.isCardio), 'sin cardio');
+});
+test('suggestSwaps nunca incluye el mismo ejercicio', () => {
+  const ids = suggestSwaps('leg_press_45').map(c => c.id);
+  assertFalse(ids.includes('leg_press_45'), 'sin self');
+});
+test('suggestSwaps solo knee safe|caution', () => {
+  const all = suggestSwaps('leg_press_45');
+  assertTrue(all.every(c => c.knee === 'safe' || c.knee === 'caution'), 'knee ok');
+});
+
+console.log('\n--- escHtml ---');
+test('escHtml escapa < > & "', () =>
+  assertEq(escHtml('<b>"a&b"</b>'), '&lt;b&gt;&quot;a&amp;b&quot;&lt;/b&gt;'));
+test('escHtml null → vacío', () => assertEq(escHtml(null), ''));
 
 // ============= REPORT =============
 console.log('\n' + '='.repeat(60));

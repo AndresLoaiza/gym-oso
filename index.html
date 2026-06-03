@@ -88,7 +88,8 @@
     <div class="progress-bar"><div class="fill" id="rutina-fill" style="width:0"></div></div>
     <div class="small" id="rutina-progress-text">0 / 0 series</div>
     <div id="rutina-list" style="margin-top:12px"></div>
-    <button class="btn ghost" id="add-exercise" style="margin-top:14px">+ Añadir ejercicio</button>
+    <textarea class="input" id="session-note" placeholder="📝 Comentario de la sesión (cómo te sentiste, energía, dolor, qué cambiarías…)" style="margin-top:14px;min-height:64px;font-size:13px;"></textarea>
+    <button class="btn ghost" id="add-exercise" style="margin-top:10px">+ Añadir ejercicio</button>
     <button class="btn ghost danger" id="reset-session" style="margin-top:8px; color:var(--danger); border-color:var(--danger);">↺ Reiniciar esta sesión</button>
   </section>
 
@@ -1783,9 +1784,12 @@ function renderRutinaInner(ns, td){
       <div id="sets-${idx}"></div>
       <div class="btn-row" style="margin-top:8px;flex-wrap:wrap;gap:6px;">
         <button class="btn small" data-act="add-set" data-i="${idx}">+ Serie</button>
+        ${isHoldEx(ex) ? `<button class="btn small" data-act="hold" data-i="${idx}" data-h="${parseHoldSec(ex.sets[0]?.reps)}" style="background:rgba(255,107,53,0.15);color:var(--accent2);">⏱ Aguante ${parseHoldSec(ex.sets[0]?.reps)}s</button>` : ''}
         ${restSec > 0 ? `<button class="btn small" data-act="rest-serie" data-i="${idx}" data-r="${restSec}">⏱ Serie ${restLabel}</button>` : ''}
         <button class="btn small" data-act="rest-ex" data-i="${idx}" data-r="150">⏱ Cambio ej. 2:30</button>
+        <button class="btn small" data-act="swap" data-i="${idx}">⇄ Cambiar</button>
       </div>
+      <input class="input" data-act="ex-note" data-i="${idx}" placeholder="📝 Nota (ej. máquina ocupada, rodilla rara…)" value="${escHtml(ex.userNote)}" style="margin-top:8px;font-size:13px;">
       </div>`;
     list.appendChild(div);
     renderSets(idx);
@@ -1824,10 +1828,24 @@ function renderRutinaInner(ns, td){
         saveDB(); renderSets(i); updateProgress();
       } else if(b.dataset.act === 'rest-serie'){ track('rest_start', { kind:'serie', sec:+b.dataset.r }); startTimer(+b.dataset.r, 'serie'); }
       else if(b.dataset.act === 'rest-ex'){ track('rest_start', { kind:'ejercicio', sec:+b.dataset.r }); startTimer(+b.dataset.r, 'ejercicio'); }
+      else if(b.dataset.act === 'hold'){ track('rest_start', { kind:'hold', sec:+b.dataset.h }); startTimer(+b.dataset.h, 'hold'); }
+      else if(b.dataset.act === 'swap'){ openSwapModal(b.dataset.i); }
       else if(b.dataset.act === 'howto'){ openHowto(b.dataset.id); }
     });
   });
+  // Notas por ejercicio (input, change ≠ click). Datos para análisis de comportamiento.
+  list.querySelectorAll('[data-act="ex-note"]').forEach(inp => {
+    inp.addEventListener('change', () => {
+      const i = inp.dataset.i;
+      if(!DB.sessionSets[i]) return;
+      DB.sessionSets[i].userNote = inp.value;
+      track('ex_note', { exId: DB.sessionSets[i].id, idx: i, len: inp.value.length });
+      saveDB();
+    });
+  });
 
+  const noteEl = $('#session-note');
+  if(noteEl) noteEl.value = DB._sessionNote || '';
   updateProgress();
   if(DB.settings.wake) requestWake();
 }
@@ -1942,12 +1960,119 @@ function updateProgress(){
   $('#rutina-progress-text').textContent = `${done} / ${total} series`;
 }
 
+/* Escapa texto para insertar seguro en HTML (notas de usuario, atributos). */
+function escHtml(s){
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+/* ===== Aguante isométrico: parseo de tiempo + detección ===== */
+// "30s" → 30 · "2 min" → 120 · "45" → 45. No-tiempo → 0.
+function parseHoldSec(reps){
+  if(typeof reps === 'number') return reps > 0 ? reps : 0;
+  if(typeof reps !== 'string') return 0;
+  const min = reps.match(/(\d+)\s*min/i);
+  if(min) return (+min[1]) * 60;
+  const sec = reps.match(/(\d+)\s*s/i);
+  if(sec) return +sec[1];
+  const n = parseInt(reps, 10);
+  return isNaN(n) ? 0 : n;
+}
+// Aguante/isométrico: time-based, sin peso, NO cardio (wall sit, holds). Estos llevan cronómetro + vibración.
+function isHoldEx(ex){
+  if(!ex || ex.isCardio || !ex.noWeight || !ex.sets) return false;
+  return ex.sets.some(s => parseHoldSec(s.reps) > 0);
+}
+
+/* ===== Swap de ejercicio: alternativas PFPS-safe del mismo grupo muscular ===== */
+// Tokeniza string de músculo: "Cuádriceps · Glúteo" → ['cuádriceps','glúteo'].
+function muscleTokens(m){
+  return (m || '').toLowerCase().split(/·|\/|,|\+/).map(s => s.trim()).filter(Boolean);
+}
+// Sugiere reemplazos: no-cardio, knee safe|caution, solapan ≥1 músculo. Orden: más solape, luego safe antes que caution.
+function suggestSwaps(exId){
+  const cur = CATALOGO.find(c => c.id === exId);
+  const curMus = cur ? muscleTokens(cur.muscle) : [];
+  return CATALOGO
+    .filter(c => c.id !== exId && !c.isCardio && (c.knee === 'safe' || c.knee === 'caution'))
+    .map(c => {
+      const overlap = muscleTokens(c.muscle).filter(t => curMus.some(ct => ct.includes(t) || t.includes(ct))).length;
+      return { c, overlap };
+    })
+    .filter(x => x.overlap > 0)
+    .sort((a, b) => (b.overlap - a.overlap) || ((a.c.knee === 'safe' ? 0 : 1) - (b.c.knee === 'safe' ? 0 : 1)))
+    .map(x => x.c);
+}
+function openSwapModal(idx){
+  const ex = DB.sessionSets[idx];
+  if(!ex) return;
+  _swapReason = null;
+  const sugg = suggestSwaps(ex.id);
+  const items = sugg.length ? sugg.map(c => {
+    const kneeTag = c.knee === 'safe'
+      ? '<span class="tag safe">PFPS seguro</span>'
+      : '<span class="tag caution">PFPS precaución</span>';
+    return `<button class="btn" style="text-align:left;margin-bottom:6px;display:flex;gap:10px;align-items:center;width:100%;" data-swapid="${c.id}" data-i="${idx}">
+      ${thumb(c.id, 'sm')}
+      <span style="flex:1">${escHtml(c.name)}<br><span class="small">${escHtml(c.muscle)}</span><br>${kneeTag}</span>
+    </button>`;
+  }).join('') : '<div class="small" style="color:var(--muted)">Sin alternativas del mismo grupo en el catálogo.</div>';
+  openModal(`
+    <h2>⇄ Cambiar ejercicio</h2>
+    <div class="small">Reemplaza <b>${escHtml(ex.name)}</b> por una alternativa PFPS-segura del mismo grupo muscular. Conserva tus series (reps/peso).</div>
+    <div class="small" style="margin-top:10px;">¿Por qué cambias? <span style="color:var(--muted)">(opcional)</span></div>
+    <div class="btn-row" id="swap-reasons" style="gap:6px;flex-wrap:wrap;margin:6px 0 10px;">
+      <button class="btn small" data-reason="ocupada">Ocupada</button>
+      <button class="btn small" data-reason="mala">En mal estado</button>
+      <button class="btn small" data-reason="dolor">Me da dolor</button>
+    </div>
+    <div>${items}</div>
+    <button class="btn ghost" style="margin-top:10px;width:100%;" onclick="closeModal()">Cancelar</button>
+  `);
+  $$('#swap-reasons [data-reason]').forEach(b => b.addEventListener('click', () => {
+    const active = _swapReason === b.dataset.reason;
+    _swapReason = active ? null : b.dataset.reason;
+    $$('#swap-reasons [data-reason]').forEach(x => x.classList.toggle('primary', x.dataset.reason === _swapReason));
+  }));
+  $$('#modal [data-swapid]').forEach(b => b.addEventListener('click', () => doSwap(b.dataset.i, b.dataset.swapid)));
+}
+function doSwap(idx, newId){
+  const ex = DB.sessionSets[idx];
+  const m = CATALOGO.find(x => x.id === newId);
+  if(!ex || !m) return;
+  const oldId = ex.id;
+  const reps0 = ex.sets[0]?.reps ?? 10;
+  const w0 = ex.sets[0]?.weight ?? 0;
+  const baseCount = ex.sets.filter(s => !s.userAdded).length || ex.sets.length;
+  const wasUni = ex.sets.some(s => s.side);
+  ex.id = m.id;
+  ex.name = m.name;
+  ex.note = m.note || '';
+  ex.isCardio = false;
+  ex.noWeight = false;
+  ex.unilateral = !!(m.unilateral || isUnilateral(m.id));
+  // Si cambia la condición unilateral, reconstruye sets preservando reps/peso base.
+  if(ex.unilateral && !wasUni){
+    ex.sets = [
+      ...Array.from({ length: baseCount }, () => ({ reps: reps0, weight: w0, done: false, side: 'L' })),
+      ...Array.from({ length: baseCount }, () => ({ reps: reps0, weight: w0, done: false, side: 'R' }))
+    ];
+  } else if(!ex.unilateral && wasUni){
+    const n = Math.max(1, Math.floor(baseCount / 2));
+    ex.sets = Array.from({ length: n }, () => ({ reps: reps0, weight: w0, done: false }));
+  }
+  track('ex_swap', { from: oldId, to: m.id, idx, reason: _swapReason });
+  _swapReason = null;
+  saveDB(); closeModal(); renderRutina();
+}
+let _swapReason = null;
+
 $('#reset-session').addEventListener('click', () => {
   if(!confirm('¿Descartar progreso actual y re-cargar ejercicios del plan? Te volverá a preguntar por la rodilla.')) return;
   const exercises = Object.values(DB.sessionSets || {});
   const doneSets = exercises.reduce((s,e) => s + (e.sets||[]).filter(x=>x.done).length, 0);
   track('session_abandon', { doneSets, exCount: exercises.length });
-  DB.sessionSets = {}; DB._currentRef = null; DB._kneeStatus = null; DB._adaptedSession = null;
+  DB.sessionSets = {}; DB._currentRef = null; DB._kneeStatus = null; DB._adaptedSession = null; DB._sessionNote = null;
   if(DB.telemetry) DB.telemetry.sessionId = null;
   saveDB();
   renderRutina();
@@ -1965,6 +2090,8 @@ $('#add-exercise').addEventListener('click', () => {
   }));
 });
 
+$('#session-note').addEventListener('change', e => { DB._sessionNote = e.target.value; saveDB(); });
+
 $('#finish-session').addEventListener('click', () => {
   const exercises = Object.values(DB.sessionSets);
   if(exercises.length === 0) return;
@@ -1974,7 +2101,8 @@ $('#finish-session').addEventListener('click', () => {
     date: new Date().toISOString(),
     exercises,
     planRef: DB._currentRef || null,
-    kneeStatus: DB._kneeStatus || 'bien'
+    kneeStatus: DB._kneeStatus || 'bien',
+    note: DB._sessionNote || ''
   };
   // Telemetría: duración + counts
   const totalSets = exercises.reduce((s,e) => s + e.sets.length, 0);
@@ -1982,11 +2110,13 @@ $('#finish-session').addEventListener('click', () => {
   const startEv = [...(DB.telemetry?.events||[])].reverse().find(e => e.type === 'session_start' && e.sid === DB.telemetry?.sessionId);
   const durSec = startEv ? Math.round((new Date() - new Date(startEv.t))/1000) : null;
   track('session_finish', { planRef: session.planRef, knee: session.kneeStatus, totalSets, doneSets, durSec, completedRatio: totalSets ? doneSets/totalSets : 0 });
+  if(session.note) track('session_note', { len: session.note.length });
   DB.sessions.push(session);
   DB.sessionSets = {};
   DB._currentRef = null;
   DB._kneeStatus = null;
   DB._adaptedSession = null;
+  DB._sessionNote = null;
   if(DB.telemetry) DB.telemetry.sessionId = null;
   saveDB();
   releaseWake();
@@ -2060,7 +2190,7 @@ function startTimer(sec, kind = 'serie'){
   const t = $('#timer');
   t.classList.add('active');
   t.classList.toggle('kind-ex', kind === 'ejercicio');
-  $('#timer-label').textContent = kind === 'ejercicio' ? 'Cambio' : 'Serie';
+  $('#timer-label').textContent = kind === 'ejercicio' ? 'Cambio' : (kind === 'hold' ? 'Aguante' : 'Serie');
   const tick = () => {
     const m = Math.floor(r/60), s = r%60;
     $('#timer-text').textContent = `${m}:${String(s).padStart(2,'0')}`;
@@ -2119,7 +2249,7 @@ function renderHist(){
     return `<div class="card">
       <h3>${fmtDate(s.date)}</h3>
       <div class="small">${s.exercises.length} ejercicios · ${s.exercises.reduce((a,e)=>a+e.sets.length,0)} series</div>
-      <details><summary>Ver detalle</summary><div>${s.exercises.map(e => `<div style="padding:4px 0;border-bottom:1px dashed var(--border);"><b>${e.name}</b><br>${e.sets.map((x,k)=>`S${k+1}: ${x.reps} × ${x.weight}kg ${x.done?'✓':'·'}`).join(' · ')}</div>`).join('')}</div></details>
+      <details><summary>Ver detalle</summary><div>${s.note ? `<div class="pfps-warn" style="margin:4px 0;">📝 ${escHtml(s.note)}</div>` : ''}${s.exercises.map(e => `<div style="padding:4px 0;border-bottom:1px dashed var(--border);"><b>${escHtml(e.name)}</b>${e.userNote ? ` <span class="small" style="color:var(--accent2)">— 📝 ${escHtml(e.userNote)}</span>` : ''}<br>${e.sets.map((x,k)=>`S${k+1}: ${x.reps} × ${x.weight}kg ${x.done?'✓':'·'}`).join(' · ')}</div>`).join('')}</div></details>
       <button class="btn small danger" style="margin-top:6px;" onclick="deleteSession(${idx})">Borrar</button>
     </div>`;
   }).join('') || '<div class="small">Sin sesiones todavía.</div>';

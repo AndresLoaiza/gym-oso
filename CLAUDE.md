@@ -7,6 +7,7 @@ App web móvil PWA de entrenamiento para **Andrés "El Oso" Loaiza** (Medellín)
 **Repo:** https://github.com/AndresLoaiza/gym-oso
 **URL pública:** https://andresloaiza.github.io/gym-oso/
 **Archivo principal:** `index.html` — toda la app en un solo archivo HTML/CSS/JS, sin frameworks.
+**Mapa del código:** `context.md` — qué hace cada función/pantalla sin leer las ~2400 líneas. Leerlo primero para entender el flujo; actualizarlo al cambiar lógica.
 
 -----
 
@@ -51,9 +52,9 @@ App web móvil PWA de entrenamiento para **Andrés "El Oso" Loaiza** (Medellín)
 node tests/test.js
 ```
 
-Exit 0 = pass, 1 = fail. Cobertura actual (123 tests): epley1RM/workWeight, parseNum (coma decimal es-CO), phaseOfWeek/windowOf, OBJECTIVE windows, CATALOGO integrity (no stale ids, flags unilateral), HOWTO/TEMPO/EX_TYPE coverage por id, analyzeWeightPattern (constant/asc/desc/mixed/unilateral + drop), decideBump (double progression + knee + shortfalls + caps + cardio skip), PROG_CAPS recalibrados, applyProgression sync de peso probado (propaga proven, respeta cap, no sube en bump negativo, ignora drop), DAYC_ORDER + rdlExercise + migrateDayCV3 (rebuild RDL + idempotencia + preserva pesos), generateLocalPlan Day C composición, DEFAULT_DB.
+Exit 0 = pass, 1 = fail. Cobertura actual (141 tests): parseHoldSec/isHoldEx (aguante isométrico), muscleTokens/suggestSwaps (swap PFPS-safe mismo músculo), escHtml, epley1RM/workWeight, parseNum (coma decimal es-CO), phaseOfWeek/windowOf, OBJECTIVE windows, CATALOGO integrity (no stale ids, flags unilateral), HOWTO/TEMPO/EX_TYPE coverage por id, analyzeWeightPattern (constant/asc/desc/mixed/unilateral + drop), decideBump (double progression + knee + shortfalls + caps + cardio skip), PROG_CAPS recalibrados, applyProgression sync de peso probado (propaga proven, respeta cap, no sube en bump negativo, ignora drop), DAYC_ORDER + rdlExercise + migrateDayCV3 (rebuild RDL + idempotencia + preserva pesos), generateLocalPlan Day C composición, DEFAULT_DB.
 
-Harness: stub DOM/localStorage/navigator + `new Function(code + 'return {bindings};')()` para extraer const/function (indirect eval no expone bindings const). Bindings expuestos incluyen `DB`, `PROG_CAPS`, `DAYC_ORDER`, `rdlExercise`, `migrateDayCV3`, `generateLocalPlan` para tests que mutan `DB.plan`. Test runner casero `test(name, fn)` con assertEq/assertDeep/assertTrue/assertFalse.
+Harness: stub DOM/localStorage/navigator + `new Function(code + 'return {bindings};')()` para extraer const/function (indirect eval no expone bindings const). Bindings expuestos incluyen `DB`, `PROG_CAPS`, `DAYC_ORDER`, `rdlExercise`, `migrateDayCV3`, `generateLocalPlan` para tests que mutan `DB.plan`, más helpers puros `parseHoldSec`, `isHoldEx`, `muscleTokens`, `suggestSwaps`, `escHtml`. Test runner casero `test(name, fn)` con assertEq/assertDeep/assertTrue/assertFalse.
 
 **Update tests al agregar lógica testeable** (nueva función pura, nuevo dict por id, nueva regla progresión, nuevo flag CATALOGO).
 
@@ -73,15 +74,18 @@ Harness: stub DOM/localStorage/navigator + `new Function(code + 'return {binding
             "weeks":[[{focus,notes,exercises:[{id,name,sets,reps,weight,rest,isCardio,noWeight,note}]}, ...]],
             "generatedBy":"local" },
   "sessions": [
-    { "date":"ISO", "exercises":[...], "planRef":{w:0,d:0}, "kneeStatus":"bien|leve|dolor" }
+    { "date":"ISO", "exercises":[...], "planRef":{w:0,d:0}, "kneeStatus":"bien|leve|dolor",
+      "note":"comentario libre de la sesión" }
   ],
   "sessionSets": { "0": {id, name, isCardio, noWeight, rest, note,
+                         userNote:"nota del usuario por ejercicio",
                          sets:[{reps,weight,done,userAdded?}]} },
   "settings": { "wake": false },
   "lastExport": "ISO",
   "_currentRef": {w,d},
   "_kneeStatus": "bien|leve|dolor",
-  "_adaptedSession": {...}
+  "_adaptedSession": {...},
+  "_sessionNote": "comentario en curso (se vuelca a session.note al finalizar)"
 }
 ```
 
@@ -169,6 +173,9 @@ Harness: stub DOM/localStorage/navigator + `new Function(code + 'return {binding
   - **Cambio ejercicio** (lila): 2:30 fijo
   - Label visible en banner del timer
 - "+ Añadir ejercicio" desde catálogo (auto-asigna rest 75s)
+- **⇄ Cambiar ejercicio** (botón por card): para máquina ocupada/mala/dolor. `suggestSwaps(exId)` propone alternativas del CATALOGO que comparten ≥1 músculo (`muscleTokens`), no-cardio, knee `safe|caution`, orden safe-primero. Modal con chips de razón (ocupada/mala/dolor → `_swapReason`). `doSwap()` reemplaza id/name/note/unilateral **conservando reps/peso** (reconstruye sets si cambia condición unilateral). Telemetría `ex_swap {from,to,reason}`.
+- **⏱ Aguante (cronómetro isométrico)**: solo ejercicios de aguante (`isHoldEx`: time-based + `noWeight` + no cardio, ej. wall sit). Botón `⏱ Aguante Ns` (`parseHoldSec` parsea `'30s'`/`'2 min'`) → `startTimer(sec,'hold')` cuenta regresiva. **Al terminar vibra fuerte (`vibrate([200,100,200,100,200])`) + beep** para avisar fin del hold. Cardio NO lleva este timer (decisión user).
+- **Comentarios de sesión** (para análisis de comportamiento): input `📝 Nota` por ejercicio (`sessionSets[i].userNote` → `session.exercises[i].userNote`, telemetría `ex_note`) + textarea `📝 Comentario de la sesión` (`_sessionNote` → `session.note`, telemetría `session_note`). Se muestran en Historial (detalle). Todo input escapado con `escHtml()`.
 - "↺ Reiniciar esta sesión" (descarta progreso, re-pregunta rodilla)
 - Action bar: "✓ Finalizar sesión"
 
@@ -215,7 +222,10 @@ Buffer local en `DB.telemetry.events` (FIFO cap 2000, ~120KB). 100% local — nu
 - `set_delete { exId, idx }`
 - `set_edit { exId, idx, field, old, new }` — reps o weight
 - `set_check { exId, idx, done, reps, weight }`
-- `rest_start { kind, sec }` — serie o ejercicio
+- `rest_start { kind, sec }` — `serie` | `ejercicio` | `hold` (aguante isométrico)
+- `ex_swap { from, to, idx, reason }` — cambio de ejercicio (ocupada/mala/dolor)
+- `ex_note { exId, idx, len }` — nota por ejercicio
+- `session_note { len }` — comentario de la sesión
 
 **Análisis offline:** user exporta JSON desde Config → pasa a Claude → identifica:
 - HOWTO/glosario más abiertos = conceptos confusos
