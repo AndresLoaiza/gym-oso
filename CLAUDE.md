@@ -31,6 +31,7 @@ App web móvil PWA de entrenamiento para **Andrés "El Oso" Loaiza** (Medellín)
 
 - `index.html` (HTML + JS inline, sin frameworks ni bundlers; el CSS vive en `elosogym.css`)
 - `elosogym.css` → **design system** (Claude Design handoff): tokens `:root` (color, tipografía, espaciado, radios, motion) + componentes con el vocabulario de clases real de la app. Retematizar = cambiar variables. Drop-in pixel-idéntico al `<style>` inline anterior.
+  - **A11y**: `:focus-visible` global (ring de teclado/switch, no molesta a touch) + `@media (prefers-reduced-motion: reduce)` (mata animaciones/transiciones/scroll; el `scrollIntoView` JS también lo respeta vía `matchMedia`). `.modal::before` = grabber de bottom-sheet (affordance de desechar; tap-backdrop ya cierra). `.btn.small` min-height 36px, `.ex-act` 40px (touch). `details.card` = sección plegable con aspecto de card.
 - `fonts/` → 16 woff2 **self-hosted** (Bebas Neue · DM Sans 300-700 · DM Mono 400/500, OFL, subsets latin+latin-ext). Sin dependencia de Google Fonts → funciona 100% offline.
 - **Mascota El Oso** (`BEARS` dict + `bearSVG(name,size)` en `index.html`): 5 osos chibi SVG **inline** (rest/dumbbell/press/bike/stairs), del design system. Offline, sin requests. **Regla: solo en estados positivos/motivacionales** — logo header (dumbbell 30px), bienvenida onboarding (dumbbell 140px), card "Hoy" (`bearForFocus`), plan completo + fin de sesión + modal de progresión (rest). NUNCA en carga/error/destructivo. Las fotos de máquinas (`thumb()`/`catalogo-imgs.js`) NO se reemplazan — el oso es aditivo.
 - `manifest.json` + `sw.js` → PWA instalable + offline cache (precachea `elosogym.css` + los 16 fonts)
@@ -106,10 +107,11 @@ Harness: stub DOM/localStorage/navigator + `new Function(code + 'return {binding
    - Migración v2 al boot: si `baseline.tests` existe y `formulaVersion !== 2`, recalcula 1RMs + regenera plan. Idempotente.
 
 ### 🏠 Inicio
+- **Progressive disclosure** (reorg UX): el home lidera con la tarea — Card "Hoy" + Stats arriba. La referencia (Guía PFPS, Glosario) va en `<details class="card">` **plegados** (no muro de texto en cada visita; un tap para abrir).
 - Card "Hoy" con próxima sesión del plan (Sem X · Día Y · Focus) + **oso** (`bearForFocus`: press/dumbbell/stairs según focus)
 - Stats: sesiones, series, semanas activas
-- Guía de carga PFPS (RIR, ROM, reglas)
-- **Glosario clickeable** con definiciones (RIR, ROM, PFPS, VMO, 1RM, Epley, etc.)
+- Guía de carga PFPS (RIR, ROM, reglas) — plegable
+- **Glosario clickeable** con definiciones (RIR, ROM, PFPS, VMO, 1RM, Epley, etc.) — plegable
 - Action bar fija inferior: "▶ Empezar siguiente sesión"
 
 ### 📅 Plan

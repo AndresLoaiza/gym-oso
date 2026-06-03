@@ -54,9 +54,9 @@
       <div id="home-today"></div>
     </div>
     <div class="stats-grid" id="home-stats"></div>
-    <div class="card">
-      <h3>Guía de carga (<span class="term" onclick="openTerm('PFPS')">PFPS</span>)</h3>
-      <div class="small">Reglas para Andrés con síndrome patelofemoral. <b>Toca los términos en amarillo para ver qué significan.</b></div>
+    <details class="card">
+      <summary>Guía de carga PFPS</summary>
+      <div class="small" style="margin-top:8px;">Reglas para Andrés con síndrome patelofemoral (<span class="term" onclick="openTerm('PFPS')">PFPS</span>). <b>Toca los términos en amarillo para ver qué significan.</b></div>
       <ul style="font-size:13px; margin: 10px 0 0 20px; line-height: 1.8;">
         <li>Carga: trabajar en <span class="term" onclick="openTerm('RIR')">RIR</span> 2-3 (deja 2-3 reps en reserva). Si llegas al fallo → bajaste mal o peso muy alto.</li>
         <li>Reps óptimas para principiante + fuerza-resistencia: <b>10-15 reps</b>. Pierna: 12-15.</li>
@@ -65,13 +65,13 @@
         <li>Rodilla: <b>NO</b> pases de 30° de flexión bajo carga. Pies altos en prensa.</li>
         <li>Si dolor &gt; 3/10 → reduce <span class="term" onclick="openTerm('ROM')">ROM</span> o carga. Frenar <span class="term" onclick="openTerm('Excéntrica')">excéntrica</span>.</li>
       </ul>
-    </div>
+    </details>
 
-    <div class="card">
-      <h3>Glosario</h3>
-      <div class="small" style="margin-bottom:8px;">Términos técnicos usados en la app. Toca cualquiera para ver definición.</div>
+    <details class="card">
+      <summary>Glosario</summary>
+      <div class="small" style="margin:8px 0 8px;">Términos técnicos usados en la app. Toca cualquiera para ver definición.</div>
       <div class="glosario-grid" id="glosario-grid"></div>
-    </div>
+    </details>
   </section>
 
   <!-- PLAN -->
@@ -1568,9 +1568,10 @@ function renderPlan(){
   const weekN = ns ? ns.weekIdx : DB.plan.weeks.length - 1;
   const sessionsDone = (DB.sessions || []).filter(s => s.planRef).length;
   const total = DB.plan.weeks.reduce((a,wk) => a + wk.length, 0);
+  const phLabel = { adapt:'Adaptación', str:'Fuerza', end:'Endurance', taper:'Taper' }[phaseOfWeek(ns ? ns.weekIdx : 7)] || '—';
   const summary = ns
     ? `<h3>Próximo: Sem ${ns.weekIdx+1} · Día ${ns.dayIdx+1}</h3>
-       <div class="small">Plan evidence-based · ${sessionsDone}/${total} sesiones hechas</div>
+       <div style="display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 2px;"><span class="chip" style="background:var(--accent-soft);color:var(--accent);">Fase: ${phLabel}</span><span class="chip">${sessionsDone}/${total} sesiones</span></div>
        <div class="small" style="margin-top:6px;">Cada día avanza al finalizar la sesión actual. Independiente del calendario.</div>`
     : `<h3>🎉 Plan completado</h3><div class="small">${sessionsDone}/${total} sesiones. Próxima sesión iniciará un ciclo nuevo automáticamente (baseline + periodización).</div>`;
   $('#plan-summary').innerHTML = summary;
@@ -1964,7 +1965,7 @@ function renderSets(i){
           let nextFound = false;
           for(const c of cards){
             if(!c.classList.contains('collapsed') && c.dataset.exIdx !== undefined){
-              c.scrollIntoView({ behavior:'smooth', block:'start' });
+              c.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block:'start' });
               nextFound = true;
               break;
             }

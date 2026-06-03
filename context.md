@@ -124,11 +124,19 @@ Export JSON desde Config → análisis offline (fricciones, conceptos confusos, 
 
 ## 13. Otras pantallas
 
+- **Inicio** (`renderHome`): lidera con la tarea — card "Hoy" (próxima sesión + oso `bearForFocus`) + stats. Guía PFPS y Glosario van en `<details class="card">` **plegados** (progressive disclosure, no muro de texto). Glosario poblado en `#glosario-grid`.
 - **Onboarding** (4 pasos): bienvenida, perfil, rodilla, test baseline (3 compuestos → 1RM híbrido). `calc()` avisa si reps >20.
-- **Plan**: strip de 8 semanas, detalle por día, contador `N/3`.
+- **Plan**: strip de 8 semanas, detalle por día, contador `N/3`, chip de fase (Adaptación/Fuerza/Endurance/Taper) en el summary.
 - **Catálogo** (`renderCatalogo`): 25 máquinas, tags PFPS, búsqueda, lightbox.
 - **Historial** (`renderHist`): stats, Chart.js (peso máx + reps prom por ejercicio), lista de sesiones con detalle + notas, borrar.
 - **Config**: perfil + 3 baselines, wake lock, auto-progresión, telemetría (export/clear), backup/restore JSON, reiniciar onboarding.
+
+## 13b. Accesibilidad (transversal)
+
+- `:focus-visible` global → ring de foco para teclado/switch (no afecta touch/mouse).
+- `@media (prefers-reduced-motion: reduce)` → desactiva animaciones/transiciones; `scrollIntoView` JS también lo respeta (`matchMedia`).
+- `.modal::before` = grabber visual de bottom-sheet (señala desechable; tap fuera cierra, ya existía).
+- Touch targets: `.btn.small` ≥36px, `.ex-act` ≥40px.
 
 ## 14. Mascota El Oso
 
