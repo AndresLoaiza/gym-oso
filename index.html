@@ -166,6 +166,27 @@
       <div class="small" style="margin-top:8px;color:var(--muted);">Última exportación: <span id="last-export">nunca</span></div>
     </div>
     <div class="card">
+      <h3>☁️ Sync con GitHub Gist</h3>
+      <div class="small">Backup automático en un Gist privado. Sincroniza ~4s después de cada cambio (sin telemetría). Token revocable, gratis. <b>Setup en el README.</b></div>
+      <label style="display:flex; gap:10px; align-items:center; margin-top:10px;">
+        <input type="checkbox" id="cfg-gist" style="width:20px; height:20px;">
+        <span style="font-size:13px;">Sync automático activado</span>
+      </label>
+      <label class="field" style="margin-top:10px;">
+        <span class="lbl">GitHub token (fine-grained · permiso Gists R/W)</span>
+        <input type="password" id="github-token" class="input" placeholder="github_pat_..." autocomplete="off" autocapitalize="none" spellcheck="false">
+      </label>
+      <label class="field">
+        <span class="lbl">Gist ID (se crea solo en el 1er sync · cópialo a otro equipo)</span>
+        <input type="text" id="gist-id" class="input" placeholder="(vacío hasta el primer sync)" autocomplete="off" autocapitalize="none" spellcheck="false">
+      </label>
+      <div class="small" id="gist-status" style="margin-top:2px;min-height:16px;color:var(--muted);"></div>
+      <div class="btn-row" style="margin-top:10px;gap:8px;">
+        <button class="btn primary" id="gist-sync-now" style="flex:1;">⬆ Sincronizar ahora</button>
+        <button class="btn" id="gist-restore">⬇ Restaurar</button>
+      </div>
+    </div>
+    <div class="card">
       <h3>Reiniciar onboarding</h3>
       <button class="btn danger" id="reset-onb">Volver a hacer onboarding</button>
     </div>
@@ -234,7 +255,8 @@ const DEFAULT_DB = {
   plan: null,    // {start, weeks: [[{focus, exercises:[...]}, ...]]}
   sessions: [],
   sessionSets: {},
-  settings: { wake: false, autoProgress: true, telemetry: true },
+  settings: { wake: false, autoProgress: true, telemetry: true,
+              githubSync: false, githubToken: '', gistId: '' },
   telemetry: { events: [], sessionId: null, startedAt: null, version: 1 }
 };
 let DB = loadDB();
@@ -261,12 +283,91 @@ function saveDB(){
       }
     } catch(e2){ /* aún sin espacio: no romper la app, el estado sigue en memoria */ }
   }
+  scheduleGistSync();  // backup en la nube (debounced, fire-and-forget) si está activado
 }
 // ¿La sesión en curso tiene trabajo real del usuario? (serie completada o serie añadida).
 // Se usa para NUNCA descartar progreso aunque la sesión diverja del plan (swap, migración).
 function sessionHasProgress(sessionSets){
   return Object.values(sessionSets || {}).some(e => e.sets?.some(s => s.done || s.userAdded));
 }
+
+/* ============= SYNC GITHUB GIST (backup automático en la nube) =============
+   Gist privado (unlisted). Fire-and-forget: nunca rompe la app. Telemetría excluida (puede pesar 100KB+).
+   Debounce: saveDB() corre en cada cambio → no spameamos la API de GitHub, sync 4s tras el último cambio.
+   ⚠ Gist "secret" = no listado pero accesible por URL sin auth. Datos no cifrados. Token solo scope Gists, revocable. */
+function syncEnabled(settings){
+  return !!(settings && settings.githubSync && settings.githubToken);
+}
+// Merge al restaurar: data remota + conserva token y gistId LOCALES (los que el user puso en este equipo).
+function mergeRestoredDB(defaultDB, remote, localSettings){
+  return { ...defaultDB, ...remote,
+    settings: { ...defaultDB.settings, ...(remote.settings || {}),
+      githubToken: (localSettings && localSettings.githubToken) || '',
+      gistId: (localSettings && localSettings.gistId) || (remote.settings && remote.settings.gistId) || '' } };
+}
+let _gistSyncTimer = null;
+function scheduleGistSync(){
+  if(!syncEnabled(DB.settings)) return;
+  try {
+    clearTimeout(_gistSyncTimer);
+    _gistSyncTimer = setTimeout(() => { syncToGist(DB); }, 4000);
+  } catch(e){ /* nunca romper saveDB */ }
+}
+async function syncToGist(db){
+  if(!syncEnabled(DB.settings)) return false;
+  try {
+    // Excluir telemetría (eventos) del payload — solo data de entrenamiento.
+    const payload = { ...db, telemetry: { events: [], version: db.telemetry?.version } };
+    const body = JSON.stringify({
+      description: 'El Oso Gym — backup automático',
+      public: false,
+      files: { 'gym-backup.json': { content: JSON.stringify(payload) } }
+    });
+    const headers = {
+      'Authorization': `Bearer ${DB.settings.githubToken}`,
+      'Content-Type': 'application/json',
+      'Accept': 'application/vnd.github+json'
+    };
+    let res;
+    if(!DB.settings.gistId){
+      // Primer sync: crear gist
+      res = await fetch('https://api.github.com/gists', { method: 'POST', headers, body });
+      if(!res.ok) return false;
+      const data = await res.json();
+      if(data && data.id){
+        DB.settings.gistId = data.id;
+        try { localStorage.setItem(STORE_KEY, JSON.stringify(DB)); } catch(e){}  // directo, sin saveDB → evita recursión
+      }
+    } else {
+      // Syncs siguientes: actualizar gist
+      res = await fetch(`https://api.github.com/gists/${DB.settings.gistId}`, { method: 'PATCH', headers, body });
+      if(!res.ok) return false;
+    }
+    return true;
+  } catch(e){ return false; }
+}
+async function restoreFromGist(){
+  if(!DB.settings.githubToken || !DB.settings.gistId){
+    openModal('<h2>Falta configuración</h2><div class="small">Pega el <b>token</b> y el <b>Gist ID</b> en Config antes de restaurar.</div><button class="btn primary" style="margin-top:14px;width:100%;" onclick="closeModal()">Entendido</button>');
+    return;
+  }
+  try {
+    const res = await fetch(`https://api.github.com/gists/${DB.settings.gistId}`, {
+      headers: { 'Authorization': `Bearer ${DB.settings.githubToken}`, 'Accept': 'application/vnd.github+json' }
+    });
+    if(!res.ok){ openModal(`<h2>Error</h2><div class="small">GitHub respondió ${res.status}. Revisa token (permiso Gists) y Gist ID.</div><button class="btn primary" style="margin-top:14px;width:100%;" onclick="closeModal()">Cerrar</button>`); return; }
+    const gist = await res.json();
+    const content = gist.files?.['gym-backup.json']?.content;
+    if(!content){ openModal('<h2>Sin backup</h2><div class="small">No se encontró <code>gym-backup.json</code> en el Gist.</div><button class="btn primary" style="margin-top:14px;width:100%;" onclick="closeModal()">Cerrar</button>'); return; }
+    const remote = JSON.parse(content);
+    DB = mergeRestoredDB(DEFAULT_DB, remote, DB.settings);
+    saveDB();
+    openModal('<div style="display:flex;justify-content:center;margin-bottom:8px;">' + bearSVG('rest', 96) + '</div><h2 style="text-align:center;">✅ Restaurado</h2><div class="small" style="text-align:center;">Datos restaurados desde GitHub Gist. Recarga la app para verlos.</div><button class="btn primary" style="margin-top:14px;width:100%;" onclick="location.reload()">Recargar ahora</button>');
+  } catch(e){
+    openModal(`<h2>Error</h2><div class="small">No se pudo restaurar: ${escHtml(e.message)}</div><button class="btn primary" style="margin-top:14px;width:100%;" onclick="closeModal()">Cerrar</button>`);
+  }
+}
+window.restoreFromGist = restoreFromGist;
 
 /* Migración v2: recalcula 1RM con fórmula híbrida (Epley≤10 / Mayhew>10).
    Tests guardados con >10 reps tenían Epley inflado → derivaba cargas excesivas. */
@@ -2373,6 +2474,9 @@ function renderConfig(){
   $('#cfg-wake').checked = !!DB.settings.wake;
   $('#cfg-autoprog').checked = DB.settings.autoProgress !== false;
   $('#cfg-telemetry').checked = DB.settings.telemetry !== false;
+  const gistChk = $('#cfg-gist'); if(gistChk) gistChk.checked = !!DB.settings.githubSync;
+  const gTok = $('#github-token'); if(gTok) gTok.value = DB.settings.githubToken || '';
+  const gId = $('#gist-id'); if(gId) gId.value = DB.settings.gistId || '';
   const ts = telemetrySummary();
   const topTypes = Object.entries(ts.types).sort((a,b)=>b[1]-a[1]).slice(0,3).map(([k,v])=>`${k}:${v}`).join(' · ');
   $('#telemetry-summary').innerHTML = ts.count
@@ -2421,6 +2525,25 @@ $('#clear-telemetry').addEventListener('click', () => {
   saveDB();
   renderConfig();
 });
+/* ----- Sync GitHub Gist: toggle, token, gist id, sync ahora, restaurar ----- */
+$('#cfg-gist').addEventListener('change', e => { DB.settings.githubSync = e.target.checked; saveDB(); });
+$('#github-token').addEventListener('change', e => { DB.settings.githubToken = e.target.value.trim(); saveDB(); });
+$('#gist-id').addEventListener('change', e => { DB.settings.gistId = e.target.value.trim(); saveDB(); });
+$('#gist-sync-now').addEventListener('click', async () => {
+  const st = $('#gist-status');
+  if(!syncEnabled(DB.settings)){
+    if(st){ st.textContent = 'Activa el sync y pega el token primero.'; st.style.color = 'var(--warn)'; }
+    return;
+  }
+  if(st){ st.textContent = 'Sincronizando…'; st.style.color = 'var(--muted)'; }
+  const ok = await syncToGist(DB);
+  const gId = $('#gist-id'); if(gId) gId.value = DB.settings.gistId || '';
+  if(st){
+    st.textContent = ok ? ('✓ Sincronizado ' + new Date().toLocaleTimeString('es')) : '✗ Error — revisa token (permiso Gists R/W) y conexión.';
+    st.style.color = ok ? 'var(--success)' : 'var(--danger)';
+  }
+});
+$('#gist-restore').addEventListener('click', () => restoreFromGist());
 $('#edit-profile').addEventListener('click', () => {
   obStep = 1; showOnboarding();
 });

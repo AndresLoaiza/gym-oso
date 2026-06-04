@@ -74,7 +74,8 @@ try {
     epley1RM, workWeight, parseNum, phaseOfWeek, windowOf, isUnilateral,
     analyzeWeightPattern, decideBump, applyProgression, tagPlanWithWindows,
     PROG_CAPS, DB, DAYC_ORDER, migrateDayCV3, rdlExercise, generateLocalPlan,
-    parseHoldSec, isHoldEx, muscleTokens, suggestSwaps, escHtml, sessionHasProgress
+    parseHoldSec, isHoldEx, muscleTokens, suggestSwaps, escHtml, sessionHasProgress,
+    syncEnabled, mergeRestoredDB
   };`;
   exposed = new Function(code + '\n' + exposeReturn)();
 } catch(e) {
@@ -461,6 +462,38 @@ test('sessionHasProgress: vacío → false', () => assertFalse(sessionHasProgres
 test('sessionHasProgress: null → false', () => assertFalse(sessionHasProgress(null)));
 test('sessionHasProgress: progreso en 2º ejercicio → true', () =>
   assertTrue(sessionHasProgress({ '0': { sets: [{ done: false }] }, '1': { sets: [{ done: true }] } })));
+
+console.log('\n--- Sync GitHub Gist: syncEnabled / mergeRestoredDB ---');
+test('syncEnabled: off aunque haya token → false', () =>
+  assertFalse(syncEnabled({ githubSync: false, githubToken: 'github_pat_x' })));
+test('syncEnabled: on pero sin token → false', () =>
+  assertFalse(syncEnabled({ githubSync: true, githubToken: '' })));
+test('syncEnabled: on + token → true', () =>
+  assertTrue(syncEnabled({ githubSync: true, githubToken: 'github_pat_x' })));
+test('syncEnabled: null → false', () => assertFalse(syncEnabled(null)));
+test('mergeRestoredDB: conserva token y gistId LOCALES (no los remotos)', () => {
+  const remote = { profile: { x: 1 }, settings: { githubToken: 'REMOTE', gistId: 'REMOTEID', wake: true } };
+  const merged = mergeRestoredDB(DEFAULT_DB, remote, { githubToken: 'LOCAL', gistId: 'LOCALID' });
+  assertEq(merged.settings.githubToken, 'LOCAL', 'token local');
+  assertEq(merged.settings.gistId, 'LOCALID', 'gistId local');
+});
+test('mergeRestoredDB: aplica data remota (profile + settings)', () => {
+  const remote = { profile: { x: 1 }, settings: { wake: true } };
+  const merged = mergeRestoredDB(DEFAULT_DB, remote, { githubToken: 'L', gistId: 'L' });
+  assertDeep(merged.profile, { x: 1 });
+  assertTrue(merged.settings.wake, 'setting remoto aplicado');
+  assertEq(merged.settings.autoProgress, true, 'default preservado');
+});
+test('mergeRestoredDB: si local sin gistId, usa el remoto como fallback', () => {
+  const remote = { settings: { gistId: 'REMOTEID' } };
+  const merged = mergeRestoredDB(DEFAULT_DB, remote, { githubToken: 'L', gistId: '' });
+  assertEq(merged.settings.gistId, 'REMOTEID');
+});
+test('DEFAULT_DB.settings tiene defaults de Gist (off, vacíos)', () => {
+  assertFalse(DEFAULT_DB.settings.githubSync);
+  assertEq(DEFAULT_DB.settings.githubToken, '');
+  assertEq(DEFAULT_DB.settings.gistId, '');
+});
 
 // ============= REPORT =============
 console.log('\n' + '='.repeat(60));

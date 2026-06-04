@@ -25,6 +25,29 @@ App PWA de entrenamiento personal para preparación de trekking nivel 4, adaptad
 - Wake lock pantalla (no se apaga durante sesión)
 - Funciona offline (service worker)
 
+## Sync automático con GitHub Gist (multi-dispositivo)
+
+Backup automático de toda tu data (perfil, plan, historial, sesiones) en un **Gist privado** de GitHub. Sincroniza ~4s después de cada cambio. Gratis, sin servidor, token revocable.
+
+### Setup (una sola vez)
+
+1. GitHub → **Settings → Developer settings → Personal access tokens → Fine-grained tokens** → *Generate new token*
+2. Permisos: **solo `Gists: Read and Write`** (nada más). Define una expiración si quieres.
+3. Copia el token (`github_pat_...`).
+4. En la app: **Config → ☁️ Sync con GitHub Gist** → pega el token → activa *Sync automático*.
+5. Pulsa **⬆ Sincronizar ahora**. La app crea el Gist privado y muestra el **Gist ID**.
+
+### Usar en otro dispositivo
+
+1. En el equipo nuevo: Config → pega el **mismo token** + el **Gist ID** (cópialo del equipo original).
+2. Pulsa **⬇ Restaurar** → recarga la app. Tienes toda tu data.
+
+### Notas de seguridad
+
+- El token vive en `localStorage` de tu dispositivo. Está scopeado **solo a Gists** y puedes **revocarlo** en GitHub cuando quieras.
+- Un Gist "secret" (`public:false`) es **no listado**, pero accesible por su URL sin autenticación. La data **no va cifrada**. El Gist ID (32 hex) no es adivinable. Para datos de entrenamiento personales es un riesgo bajo y aceptable; no metas nada que no quieras que exista en un Gist.
+- La **telemetría NO se sincroniza** (se excluye del payload; puede pesar 100KB+).
+
 ## Instalar en iPhone
 
 1. Abrir https://andresloaiza.github.io/gym-oso/ en Safari

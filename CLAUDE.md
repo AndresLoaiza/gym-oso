@@ -81,7 +81,8 @@ Harness: stub DOM/localStorage/navigator + `new Function(code + 'return {binding
   "sessionSets": { "0": {id, name, isCardio, noWeight, rest, note,
                          userNote:"nota del usuario por ejercicio",
                          sets:[{reps,weight,done,userAdded?}]} },
-  "settings": { "wake": false },
+  "settings": { "wake": false, "autoProgress": true, "telemetry": true,
+                "githubSync": false, "githubToken": "", "gistId": "" },
   "lastExport": "ISO",
   "_currentRef": {w,d},
   "_kneeStatus": "bien|leve|dolor",
@@ -207,8 +208,20 @@ Harness: stub DOM/localStorage/navigator + `new Function(code + 'return {binding
 - **Auto-progresión** toggle (default ON) — ajusta pesos del plan al finalizar sesión
 - **Telemetría UX** toggle (default ON) — acumula eventos de uso para análisis de fricciones, 100% local. Botón export JSON + clear. Summary muestra count + días + top tipos
 - **Backup / Restore JSON** — exportar todo a archivo, importar desde archivo (sobrevive borrado de app, cambio de celular)
+- **☁️ Sync con GitHub Gist** (default OFF) — backup automático en Gist privado. Toggle + input token (`password`) + input Gist ID + "Sincronizar ahora" + "Restaurar". Ver § Sync GitHub Gist.
 - Reiniciar onboarding (re-genera plan con baselines actualizados)
-- _Sin API key ni integraciones externas — app 100% local_
+- _Sin servidor propio — la única integración externa opcional es GitHub Gist (backup), 100% bajo el token del usuario_
+
+## Sync con GitHub Gist
+
+Backup automático opcional en un **Gist privado** de GitHub (multi-dispositivo). Setup detallado en `README.md`. Default OFF.
+
+- **`DB.settings`**: `githubSync` (bool), `githubToken` (`github_pat_...`, fine-grained, scope **solo Gists R/W**), `gistId` (creado en el 1er sync, persiste).
+- **`syncToGist(db)`** — fire-and-forget, nunca rompe la app (try/catch, devuelve bool). Excluye `telemetry.events` del payload (puede pesar 100KB+). 1er sync → `POST /gists` (crea, guarda `gistId` vía `localStorage.setItem` directo, **sin** `saveDB()` para evitar recursión). Siguientes → `PATCH /gists/:id`.
+- **Debounce**: `saveDB()` llama `scheduleGistSync()` que debounce **4s** tras el último cambio → no spamea la API de GitHub (saveDB corre en cada tecla).
+- **`restoreFromGist()`** — `GET /gists/:id`, `mergeRestoredDB(DEFAULT_DB, remote, localSettings)` conserva **token y gistId LOCALES** (los del equipo actual), aplica el resto remoto. Modal con recarga.
+- **`syncEnabled(settings)`** → `githubSync && githubToken`. Helpers puros testeados.
+- ⚠ **Seguridad**: Gist "secret" = no listado pero accesible por URL sin auth, **sin cifrar**. Token en localStorage, scopeado a Gists, revocable. Riesgo bajo para datos de entrenamiento personales.
 
 ## Telemetría UX
 

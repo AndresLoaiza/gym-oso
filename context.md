@@ -151,6 +151,14 @@ Export JSON desde Config → análisis offline (fricciones, conceptos confusos, 
 - `openModal(html)`/`closeModal()` — modales (preferir sobre `alert/confirm` en PWA iOS).
 - `saveDB()` — persiste `DB` a localStorage tras cada mutación. **Resiliente a quota**: si `setItem` lanza, recorta `telemetry.events` a la mitad y reintenta (el progreso de rutina no se pierde por falta de espacio). Flush extra en `visibilitychange`/`pagehide` (iOS mata la PWA al backgroundear).
 - `sessionHasProgress(sessionSets)` — ¿hay serie `done` o `userAdded`? Usado por el guard de `renderRutina` para **nunca descartar** una sesión con trabajo real aunque diverja del plan (anti-pérdida; telemetría `session_preserved`).
+- `saveDB()` también llama `scheduleGistSync()` → backup en GitHub Gist (debounced 4s) si `settings.githubSync`.
+
+## 12b. Sync con GitHub Gist (backup nube opcional, default OFF)
+
+- `settings.githubSync/githubToken/gistId`. `syncEnabled(settings)` = `githubSync && githubToken`.
+- `scheduleGistSync()` (debounce 4s, llamado por `saveDB`) → `syncToGist(db)`: fire-and-forget, excluye `telemetry.events`. 1er sync `POST /gists` (guarda `gistId` con `localStorage.setItem` directo, sin `saveDB` → evita recursión); siguientes `PATCH`.
+- `restoreFromGist()` (botón Config + dispositivo nuevo): `GET /gists/:id` → `mergeRestoredDB(DEFAULT_DB, remote, localSettings)` conserva token + gistId locales, aplica resto remoto → `saveDB` + recarga.
+- UI en Config: toggle, token (`password`), Gist ID (editable, para pegar en otro equipo), "Sincronizar ahora" (feedback en `#gist-status`), "Restaurar". Setup en README. ⚠ Gist secret = no listado, accesible por URL, sin cifrar.
 
 ## 16. Tests — `tests/test.js`
 
