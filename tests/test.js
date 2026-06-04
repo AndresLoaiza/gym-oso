@@ -36,6 +36,9 @@ globalThis.document = {
   visibilityState: 'visible',
 };
 globalThis.window = globalThis;
+globalThis.addEventListener = noop;
+globalThis.removeEventListener = noop;
+globalThis.matchMedia = () => ({ matches: false, addEventListener: noop, removeEventListener: noop });
 globalThis.localStorage = {
   _store: {},
   getItem(k){ return Object.prototype.hasOwnProperty.call(this._store, k) ? this._store[k] : null; },
@@ -71,7 +74,7 @@ try {
     epley1RM, workWeight, parseNum, phaseOfWeek, windowOf, isUnilateral,
     analyzeWeightPattern, decideBump, applyProgression, tagPlanWithWindows,
     PROG_CAPS, DB, DAYC_ORDER, migrateDayCV3, rdlExercise, generateLocalPlan,
-    parseHoldSec, isHoldEx, muscleTokens, suggestSwaps, escHtml
+    parseHoldSec, isHoldEx, muscleTokens, suggestSwaps, escHtml, sessionHasProgress
   };`;
   exposed = new Function(code + '\n' + exposeReturn)();
 } catch(e) {
@@ -446,6 +449,18 @@ console.log('\n--- escHtml ---');
 test('escHtml escapa < > & "', () =>
   assertEq(escHtml('<b>"a&b"</b>'), '&lt;b&gt;&quot;a&amp;b&quot;&lt;/b&gt;'));
 test('escHtml null → vacío', () => assertEq(escHtml(null), ''));
+
+console.log('\n--- Persistencia: sessionHasProgress (anti-pérdida) ---');
+test('sessionHasProgress: serie completada → true', () =>
+  assertTrue(sessionHasProgress({ '0': { sets: [{ reps: 10, weight: 20, done: true }] } })));
+test('sessionHasProgress: serie añadida por user → true', () =>
+  assertTrue(sessionHasProgress({ '0': { sets: [{ reps: 10, weight: 20, done: false, userAdded: true }] } })));
+test('sessionHasProgress: sesión recién armada (nada done) → false', () =>
+  assertFalse(sessionHasProgress({ '0': { sets: [{ reps: 10, weight: 20, done: false }] }, '1': { sets: [{ reps: 8, weight: 0, done: false }] } })));
+test('sessionHasProgress: vacío → false', () => assertFalse(sessionHasProgress({})));
+test('sessionHasProgress: null → false', () => assertFalse(sessionHasProgress(null)));
+test('sessionHasProgress: progreso en 2º ejercicio → true', () =>
+  assertTrue(sessionHasProgress({ '0': { sets: [{ done: false }] }, '1': { sets: [{ done: true }] } })));
 
 // ============= REPORT =============
 console.log('\n' + '='.repeat(60));

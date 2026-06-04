@@ -119,7 +119,7 @@ Double progression (Helms/Schoenfeld). Pipeline:
 ## 12. Telemetría — `track(type, data)`
 
 100% local. Skip si `settings.telemetry===false`. Nunca rompe la app (try/catch). FIFO cap 2000.
-Tipos: `screen_view, modal_open, glosario_open, howto_open, knee_check, session_start/finish/abandon, set_add/delete/edit/check, rest_start (kind serie|ejercicio|hold), ex_collapse_toggle, ex_swap, ex_note, session_note`.
+Tipos: `screen_view, modal_open, glosario_open, howto_open, knee_check, session_start/finish/abandon/preserved, set_add/delete/edit/check, rest_start (kind serie|ejercicio|hold), ex_collapse_toggle, ex_swap, ex_note, session_note`.
 Export JSON desde Config → análisis offline (fricciones, conceptos confusos, abandonos, **ahora también notas de usuario**).
 
 ## 13. Otras pantallas
@@ -149,7 +149,8 @@ Export JSON desde Config → análisis offline (fricciones, conceptos confusos, 
 - `parseNum(str)` — coma decimal es-CO (`7,5`→7.5).
 - `escHtml(s)` — escapa `< > & "` para HTML/atributos seguros.
 - `openModal(html)`/`closeModal()` — modales (preferir sobre `alert/confirm` en PWA iOS).
-- `saveDB()` — persiste `DB` a localStorage. **Llamar tras cada mutación.**
+- `saveDB()` — persiste `DB` a localStorage tras cada mutación. **Resiliente a quota**: si `setItem` lanza, recorta `telemetry.events` a la mitad y reintenta (el progreso de rutina no se pierde por falta de espacio). Flush extra en `visibilitychange`/`pagehide` (iOS mata la PWA al backgroundear).
+- `sessionHasProgress(sessionSets)` — ¿hay serie `done` o `userAdded`? Usado por el guard de `renderRutina` para **nunca descartar** una sesión con trabajo real aunque diverja del plan (anti-pérdida; telemetría `session_preserved`).
 
 ## 16. Tests — `tests/test.js`
 

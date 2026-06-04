@@ -248,7 +248,25 @@ function loadDB(){
   try { return Object.assign({}, DEFAULT_DB, JSON.parse(localStorage.getItem(STORE_KEY) || '{}')); }
   catch(e) { return JSON.parse(JSON.stringify(DEFAULT_DB)); }
 }
-function saveDB(){ localStorage.setItem(STORE_KEY, JSON.stringify(DB)); }
+function saveDB(){
+  try {
+    localStorage.setItem(STORE_KEY, JSON.stringify(DB));
+  } catch(e){
+    // QuotaExceededError: la telemetría es lo único que crece sin techo útil.
+    // Recórtala a la mitad y reintenta → nunca se pierde el progreso de la rutina por falta de espacio.
+    try {
+      if(DB.telemetry?.events?.length){
+        DB.telemetry.events.splice(0, Math.ceil(DB.telemetry.events.length / 2));
+        localStorage.setItem(STORE_KEY, JSON.stringify(DB));
+      }
+    } catch(e2){ /* aún sin espacio: no romper la app, el estado sigue en memoria */ }
+  }
+}
+// ¿La sesión en curso tiene trabajo real del usuario? (serie completada o serie añadida).
+// Se usa para NUNCA descartar progreso aunque la sesión diverja del plan (swap, migración).
+function sessionHasProgress(sessionSets){
+  return Object.values(sessionSets || {}).some(e => e.sets?.some(s => s.done || s.userAdded));
+}
 
 /* Migración v2: recalcula 1RM con fórmula híbrida (Epley≤10 / Mayhew>10).
    Tests guardados con >10 reps tenían Epley inflado → derivaba cargas excesivas. */
@@ -1495,6 +1513,11 @@ function show(tab){
 }
 $$('.nav-btn').forEach(b => b.addEventListener('click', () => show(b.dataset.tab)));
 
+// Red de seguridad de persistencia: iOS puede matar la app al backgroundear.
+// Flush del estado en cada cambio de visibilidad / cierre → la rutina del día nunca se pierde.
+document.addEventListener('visibilitychange', () => { if(document.visibilityState === 'hidden') saveDB(); });
+window.addEventListener('pagehide', () => saveDB());
+
 /* ============= HOME ============= */
 function renderHome(){
   const t = $('#home-today');
@@ -1694,8 +1717,15 @@ function renderRutina(){
     }
   }
   if(staleSession){
-    DB.sessionSets = {}; DB._adaptedSession = null;
-    saveDB();
+    // Anti-pérdida: si el user ya completó/añadió series, su trabajo manda sobre el sync con el plan.
+    // Solo descartamos cuando NO hay progreso (sesión recién armada que quedó desincronizada).
+    if(sessionHasProgress(DB.sessionSets)){
+      staleSession = false;
+      track('session_preserved', { reason: 'stale_but_has_progress' });
+    } else {
+      DB.sessionSets = {}; DB._adaptedSession = null;
+      saveDB();
+    }
   }
 
   // Pedir check-in de rodilla si cambió de día, nunca preguntado, sesión stale,

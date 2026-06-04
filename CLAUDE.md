@@ -227,6 +227,7 @@ Buffer local en `DB.telemetry.events` (FIFO cap 2000, ~120KB). 100% local — nu
 - `session_start { planRef, knee, exCount, focus }` — inicia sessionId
 - `session_finish { planRef, knee, totalSets, doneSets, durSec, completedRatio }` — calcula duración desde session_start
 - `session_abandon { doneSets, exCount }` — botón reset
+- `session_preserved { reason }` — guard preservó sesión con progreso en vez de descartarla (anti-pérdida)
 - `set_add { exId, idx }`
 - `set_delete { exId, idx }`
 - `set_edit { exId, idx, field, old, new }` — reps o weight
@@ -344,11 +345,19 @@ Otras reglas:
 - Ejercicios sin carga llevan `noWeight:true` (UI esconde columna peso)
 - Time-based ex (cardio + isométrico) usan `reps` string ("8 min", "30s") + input `type=text`
 
+## Persistencia y durabilidad de la sesión
+
+La rutina en curso (`sessionSets`) se guarda en `localStorage` en **cada** mutación (set-check, edit de peso/reps, add/delete de serie, swap, nota). Además, 3 redes de seguridad para que cerrar la app por error **nunca** pierda progreso:
+
+1. **`saveDB()` resiliente a quota**: try/catch; si `localStorage.setItem` lanza `QuotaExceededError` (la telemetría crece sin techo), recorta `telemetry.events` a la mitad y reintenta. El progreso de la rutina nunca se pierde por falta de espacio.
+2. **Flush al backgroundear/cerrar**: `visibilitychange` (hidden) + `pagehide` → `saveDB()`. iOS puede matar la PWA al backgroundear entre dos cambios; esto flushea el estado final.
+3. **Guard anti-pérdida** (`renderRutina`): el guard `staleSession` (que vacía `sessionSets` cuando diverge del plan, ej. tras swap o migración de plan) **ya no descarta** una sesión con trabajo real. `sessionHasProgress(sessionSets)` (serie `done` o `userAdded`) → si hay progreso, se preserva la sesión sobre el sync con el plan. Telemetría `session_preserved`. Solo se vacía si NO hay progreso.
+
 ## Convenciones de código
 
 - Todo en español (UI, comentarios, variables descriptivas)
 - Funciones camelCase: `renderRutina`, `nextSession`, `adaptSessionForKnee`, `epley1RM`
-- `saveDB()` después de cada mutación
+- `saveDB()` después de cada mutación (es resiliente a quota — ver § Persistencia)
 - `DB` objeto global, sincronizado con localStorage
 - IDs catálogo en snake_case (`leg_press_45`, `prone_leg_curl`, `pantorrilla_sentado`)
 - No usar `alert()` para flows importantes → usar `openModal()` ya implementado
