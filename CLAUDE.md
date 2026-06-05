@@ -44,6 +44,7 @@ App web móvil PWA de entrenamiento para **Andrés "El Oso" Loaiza** (Medellín)
 
 - `convert.py` — convierte HEIC → JPG (requiere `pillow-heif`, `Pillow`)
 - `gen_thumbs.py` — genera `catalogo-imgs.js` (thumbnails 220px JPEG q70 base64)
+- `gen_icons.py` — genera los iconos PWA/iOS (`icon-192.png`, `icon-512.png`, `apple-touch-icon-180.png`) desde la **mascota** (`BEARS.dumbbell` en `index.html` = fuente de verdad). Fondo lila de marca + oso oscuro monocromo (alto contraste a tamaño home-screen). Requiere `svglib`, `reportlab`, `Pillow`. Correr si se cambia la mascota. `manifest.json` (192/512) + `<link apple-touch-icon>` (180) los referencian; `sw.js` los precachea.
 
 ## Tests
 
