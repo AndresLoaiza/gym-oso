@@ -140,7 +140,7 @@ Export JSON desde Config → análisis offline (fricciones, conceptos confusos, 
 
 ## 14. Mascota El Oso
 
-`BEARS` dict + `bearSVG(name, size)`: 5 osos chibi SVG inline (rest/dumbbell/press/bike/stairs). **Solo estados positivos** (logo, bienvenida, card Hoy `bearForFocus`, fin de sesión, modal progresión). Nunca en error/carga/destructivo.
+`BEARS_PNG` (en `osos-imgs.js`, 5 PNG base64 ~9-11KB c/u, 72KB total) + `bearSVG(name, size)` (devuelve `<img>`, nombre histórico) + `BEAR_ALT` (alt accesible): 5 osos chibi (rest/dumbbell/press/bike/stairs) generados con Ideogram (fondo transparente). **Solo estados positivos** (logo, bienvenida, card Hoy `bearForFocus`, fin de sesión, modal progresión). Nunca en error/carga/destructivo. Fuente PNG 1024: `assets/osos-src/`. Regenerar base64: `python gen_osos.py`. Generar nuevos osos con Ideogram: `tools/ideogram_gen.py` (raíz workspace).
 
 ## 15. Utilidades clave
 

@@ -1,9 +1,10 @@
-const CACHE = 'oso-gym-v52';
+const CACHE = 'oso-gym-v53';
 const ASSETS = [
   './',
   './index.html',
   './manifest.json',
   './catalogo-imgs.js',
+  './osos-imgs.js',
   './elosogym.css',
   './apple-touch-icon-180.png',
   './icon-192.png',
