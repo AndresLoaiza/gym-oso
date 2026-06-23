@@ -166,24 +166,13 @@
       <div class="small" style="margin-top:8px;color:var(--muted);">Última exportación: <span id="last-export">nunca</span></div>
     </div>
     <div class="card">
-      <h3>☁️ Sync con GitHub Gist</h3>
-      <div class="small">Backup automático en un Gist privado. Sincroniza ~4s después de cada cambio (sin telemetría). Token revocable, gratis. <b>Setup en el README.</b></div>
-      <label style="display:flex; gap:10px; align-items:center; margin-top:10px;">
-        <input type="checkbox" id="cfg-gist" style="width:20px; height:20px;">
-        <span style="font-size:13px;">Sync automático activado</span>
-      </label>
-      <label class="field" style="margin-top:10px;">
-        <span class="lbl">GitHub token (fine-grained · permiso Gists R/W)</span>
-        <input type="password" id="github-token" class="input" placeholder="github_pat_..." autocomplete="off" autocapitalize="none" spellcheck="false">
-      </label>
-      <label class="field">
-        <span class="lbl">Gist ID (se crea solo en el 1er sync · cópialo a otro equipo)</span>
-        <input type="text" id="gist-id" class="input" placeholder="(vacío hasta el primer sync)" autocomplete="off" autocapitalize="none" spellcheck="false">
-      </label>
-      <div class="small" id="gist-status" style="margin-top:2px;min-height:16px;color:var(--muted);"></div>
+      <h3>☁️ Sincronización (Supabase)</h3>
+      <div class="small">Backup automático y multi-dispositivo. Sincroniza ~4s después de cada cambio (sin telemetría).</div>
+      <div class="small" id="account-status" style="margin-top:8px;color:var(--muted);min-height:16px;">—</div>
+      <div class="small" id="sync-status" style="margin-top:2px;min-height:16px;color:var(--muted);"></div>
       <div class="btn-row" style="margin-top:10px;gap:8px;">
-        <button class="btn primary" id="gist-sync-now" style="flex:1;">⬆ Sincronizar ahora</button>
-        <button class="btn" id="gist-restore">⬇ Restaurar</button>
+        <button class="btn primary" id="sync-now" style="flex:1;">⬆ Sincronizar ahora</button>
+        <button class="btn" id="logout">Cerrar sesión</button>
       </div>
     </div>
     <div class="card">
@@ -252,13 +241,22 @@ const CATALOGO = [
 
 /* ============= ESTADO ============= */
 const STORE_KEY = 'elosoGymV2';
+
+/* ===== Supabase (proyecto compartido con la app de viajes) =====
+   La publishable key es publicable por diseño; las tablas gym_* están protegidas
+   por RLS auth.uid(). Ver docs/superpowers/specs/2026-06-22-supabase-sync-design.md §9. */
+const SUPABASE_URL = 'https://gbfxpzsblnrasfvxnquk.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_mRvhm4a-U8F9NqBNe4fNiQ_q_0cYLiD';
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  auth: { persistSession: true, autoRefreshToken: true },
+});
+let _gymUid = null;  // uuid del usuario autenticado, o null
 const DEFAULT_DB = {
   profile: null, // {weight, height, age, knee, trekDate, baseline}
   plan: null,    // {start, weeks: [[{focus, exercises:[...]}, ...]]}
   sessions: [],
   sessionSets: {},
-  settings: { wake: false, autoProgress: true, telemetry: true,
-              githubSync: false, githubToken: '', gistId: '' },
+  settings: { wake: false, autoProgress: true, telemetry: true },
   telemetry: { events: [], sessionId: null, startedAt: null, version: 1 }
 };
 let DB = loadDB();
@@ -285,7 +283,7 @@ function saveDB(){
       }
     } catch(e2){ /* aún sin espacio: no romper la app, el estado sigue en memoria */ }
   }
-  scheduleGistSync();  // backup en la nube (debounced, fire-and-forget) si está activado
+  scheduleSupabaseSync();  // sync en la nube (debounced, fire-and-forget) si hay sesión
 }
 // ¿La sesión en curso tiene trabajo real del usuario? (serie completada o serie añadida).
 // Se usa para NUNCA descartar progreso aunque la sesión diverja del plan (swap, migración).
@@ -293,83 +291,156 @@ function sessionHasProgress(sessionSets){
   return Object.values(sessionSets || {}).some(e => e.sets?.some(s => s.done || s.userAdded));
 }
 
-/* ============= SYNC GITHUB GIST (backup automático en la nube) =============
-   Gist privado (unlisted). Fire-and-forget: nunca rompe la app. Telemetría excluida (puede pesar 100KB+).
-   Debounce: saveDB() corre en cada cambio → no spameamos la API de GitHub, sync 4s tras el último cambio.
-   ⚠ Gist "secret" = no listado pero accesible por URL sin auth. Datos no cifrados. Token solo scope Gists, revocable. */
-function syncEnabled(settings){
-  return !!(settings && settings.githubSync && settings.githubToken);
+/* ============= SYNC SUPABASE (backup + multi-dispositivo) =============
+   localStorage sigue siendo fuente primaria en sesión (offline-first).
+   Estas tablas gym_* (jsonb por entidad) son capa aditiva de sync.
+   Telemetría NUNCA sincroniza (puede pesar 100KB+, vive solo local). */
+
+// ----- Transformación pura DB ↔ filas -----
+// Settings que SÍ se sincronizan (sin credenciales locales de plataforma)
+function pickSyncSettings(settings){
+  const s = settings || {};
+  return { wake: !!s.wake, autoProgress: s.autoProgress !== false, telemetry: s.telemetry !== false };
 }
-// Merge al restaurar: data remota + conserva token y gistId LOCALES (los que el user puso en este equipo).
-function mergeRestoredDB(defaultDB, remote, localSettings){
-  return { ...defaultDB, ...remote,
-    settings: { ...defaultDB.settings, ...(remote.settings || {}),
-      githubToken: (localSettings && localSettings.githubToken) || '',
-      gistId: (localSettings && localSettings.gistId) || (remote.settings && remote.settings.gistId) || '' } };
+// DB en memoria → payloads de las 4 tablas de fila única (sessions va aparte)
+function gymStateRows(db, uid){
+  return {
+    profile:        { user_id: uid, data: db.profile ?? null },
+    plan:           { user_id: uid, data: db.plan ?? null },
+    settings:       { user_id: uid, data: pickSyncSettings(db.settings) },
+    active_session: { user_id: uid, data: {
+      sessionSets:     db.sessionSets || {},
+      _currentRef:     db._currentRef ?? null,
+      _kneeStatus:     db._kneeStatus ?? null,
+      _adaptedSession: db._adaptedSession ?? null,
+      _sessionNote:    db._sessionNote ?? '',
+    } },
+  };
 }
-let _gistSyncTimer = null;
-function scheduleGistSync(){
-  if(!syncEnabled(DB.settings)) return;
+// Filas remotas → DB en memoria. Conserva la telemetría LOCAL (nunca viene del remoto).
+function hydrateGymDB(defaultDB, rows, localTelemetry){
+  const as = rows.active_session?.data || {};
+  return {
+    ...defaultDB,
+    profile:  rows.profile?.data ?? null,
+    plan:     rows.plan?.data ?? null,
+    sessions: (rows.sessions || []).map(r => r.data),
+    sessionSets: as.sessionSets || {},
+    settings: { ...defaultDB.settings, ...(rows.settings?.data || {}) },
+    telemetry: localTelemetry ?? JSON.parse(JSON.stringify(defaultDB.telemetry)),
+    _currentRef:     as._currentRef ?? null,
+    _kneeStatus:     as._kneeStatus ?? null,
+    _adaptedSession: as._adaptedSession ?? null,
+    _sessionNote:    as._sessionNote ?? '',
+  };
+}
+// Aplica un cambio realtime entrante a la slice del DB. Ignora self-echo (data ya idéntica).
+// Devuelve true si el DB cambió (=> re-render).
+function applyGymRealtime(db, table, row){
+  const data = row?.data;
+  if(table === 'gym_sessions'){
+    if(!data) return false;
+    db.sessions = db.sessions || [];
+    if(db.sessions.some(s => s.date === data.date)) return false; // ya existe
+    db.sessions.push(data);
+    return true;
+  }
+  const sliceEq = (cur, next) => JSON.stringify(cur ?? null) === JSON.stringify(next ?? null);
+  if(table === 'gym_profile'){ if(sliceEq(db.profile, data)) return false; db.profile = data; return true; }
+  if(table === 'gym_plan'){    if(sliceEq(db.plan, data)) return false;    db.plan = data;    return true; }
+  if(table === 'gym_settings'){
+    const next = { ...(db.settings||{}), ...(data||{}) };
+    if(sliceEq(db.settings, next)) return false;
+    db.settings = next; return true;
+  }
+  if(table === 'gym_active_session'){
+    const cur = { sessionSets: db.sessionSets, _currentRef: db._currentRef, _kneeStatus: db._kneeStatus, _adaptedSession: db._adaptedSession, _sessionNote: db._sessionNote };
+    if(sliceEq(cur, data)) return false;
+    db.sessionSets = data.sessionSets || {};
+    db._currentRef = data._currentRef ?? null;
+    db._kneeStatus = data._kneeStatus ?? null;
+    db._adaptedSession = data._adaptedSession ?? null;
+    db._sessionNote = data._sessionNote ?? '';
+    return true;
+  }
+  return false;
+}
+
+// ----- I/O: push (upsert debounced) -----
+let _sbSyncTimer = null;
+let _sbReady = false;  // true tras hidratar; evita upserts durante la hidratación inicial
+function scheduleSupabaseSync(){
+  if(!_sbReady || !_gymUid) return;
   try {
-    clearTimeout(_gistSyncTimer);
-    _gistSyncTimer = setTimeout(() => { syncToGist(DB); }, 4000);
+    clearTimeout(_sbSyncTimer);
+    _sbSyncTimer = setTimeout(pushGymState, 4000);
   } catch(e){ /* nunca romper saveDB */ }
 }
-async function syncToGist(db){
-  if(!syncEnabled(DB.settings)) return false;
+async function pushGymState(){
+  if(!_gymUid) return;
   try {
-    // Excluir telemetría (eventos) del payload — solo data de entrenamiento.
-    const payload = { ...db, telemetry: { events: [], version: db.telemetry?.version } };
-    const body = JSON.stringify({
-      description: 'El Oso Gym — backup automático',
-      public: false,
-      files: { 'gym-backup.json': { content: JSON.stringify(payload) } }
-    });
-    const headers = {
-      'Authorization': `Bearer ${DB.settings.githubToken}`,
-      'Content-Type': 'application/json',
-      'Accept': 'application/vnd.github+json'
-    };
-    let res;
-    if(!DB.settings.gistId){
-      // Primer sync: crear gist
-      res = await fetch('https://api.github.com/gists', { method: 'POST', headers, body });
-      if(!res.ok) return false;
-      const data = await res.json();
-      if(data && data.id){
-        DB.settings.gistId = data.id;
-        try { localStorage.setItem(STORE_KEY, JSON.stringify(DB)); } catch(e){}  // directo, sin saveDB → evita recursión
-      }
-    } else {
-      // Syncs siguientes: actualizar gist
-      res = await fetch(`https://api.github.com/gists/${DB.settings.gistId}`, { method: 'PATCH', headers, body });
-      if(!res.ok) return false;
-    }
-    return true;
-  } catch(e){ return false; }
+    const r = gymStateRows(DB, _gymUid);
+    const stamp = new Date().toISOString();
+    await Promise.all([
+      sb.from('gym_profile').upsert({ ...r.profile, updated_at: stamp }),
+      sb.from('gym_plan').upsert({ ...r.plan, updated_at: stamp }),
+      sb.from('gym_settings').upsert({ ...r.settings, updated_at: stamp }),
+      sb.from('gym_active_session').upsert({ ...r.active_session, updated_at: stamp }),
+    ]);
+  } catch(e){ /* offline / error de red: el estado vive en localStorage, se reintenta al próximo saveDB */ }
 }
-async function restoreFromGist(){
-  if(!DB.settings.githubToken || !DB.settings.gistId){
-    openModal('<h2>Falta configuración</h2><div class="small">Pega el <b>token</b> y el <b>Gist ID</b> en Config antes de restaurar.</div><button class="btn primary" style="margin-top:14px;width:100%;" onclick="closeModal()">Entendido</button>');
-    return;
-  }
-  try {
-    const res = await fetch(`https://api.github.com/gists/${DB.settings.gistId}`, {
-      headers: { 'Authorization': `Bearer ${DB.settings.githubToken}`, 'Accept': 'application/vnd.github+json' }
-    });
-    if(!res.ok){ openModal(`<h2>Error</h2><div class="small">GitHub respondió ${res.status}. Revisa token (permiso Gists) y Gist ID.</div><button class="btn primary" style="margin-top:14px;width:100%;" onclick="closeModal()">Cerrar</button>`); return; }
-    const gist = await res.json();
-    const content = gist.files?.['gym-backup.json']?.content;
-    if(!content){ openModal('<h2>Sin backup</h2><div class="small">No se encontró <code>gym-backup.json</code> en el Gist.</div><button class="btn primary" style="margin-top:14px;width:100%;" onclick="closeModal()">Cerrar</button>'); return; }
-    const remote = JSON.parse(content);
-    DB = mergeRestoredDB(DEFAULT_DB, remote, DB.settings);
-    saveDB();
-    openModal('<div style="display:flex;justify-content:center;margin-bottom:8px;">' + bearSVG('rest', 96) + '</div><h2 style="text-align:center;">✅ Restaurado</h2><div class="small" style="text-align:center;">Datos restaurados desde GitHub Gist. Recarga la app para verlos.</div><button class="btn primary" style="margin-top:14px;width:100%;" onclick="location.reload()">Recargar ahora</button>');
-  } catch(e){
-    openModal(`<h2>Error</h2><div class="small">No se pudo restaurar: ${escHtml(e.message)}</div><button class="btn primary" style="margin-top:14px;width:100%;" onclick="closeModal()">Cerrar</button>`);
-  }
+async function pushSession(session){
+  if(!_gymUid) return;
+  try { await sb.from('gym_sessions').insert({ user_id: _gymUid, data: session }); }
+  catch(e){ /* se reintenta en reconciliación futura */ }
 }
-window.restoreFromGist = restoreFromGist;
+
+// ----- Realtime: subscripción por tabla -----
+function subscribeGymRealtime(){
+  if(!_gymUid) return;
+  const tables = ['gym_profile','gym_plan','gym_settings','gym_active_session','gym_sessions'];
+  const ch = sb.channel('gym-sync');
+  tables.forEach(t => {
+    ch.on('postgres_changes', { event: '*', schema: 'public', table: t, filter: `user_id=eq.${_gymUid}` },
+      (payload) => {
+        const row = payload.new && Object.keys(payload.new).length ? payload.new : null;
+        if(!row) return;
+        if(applyGymRealtime(DB, t, row)){
+          try { localStorage.setItem(STORE_KEY, JSON.stringify(DB)); } catch(e){}  // persistir sin re-disparar sync
+          const active = document.querySelector('.tab.active')?.dataset?.tab || 'home';
+          show(active);  // re-render de la pantalla actual
+        }
+      });
+  });
+  ch.subscribe();
+}
+
+// ----- Login (auth email+password) -----
+function showLogin(errMsg){
+  const err = errMsg ? `<div class="small" style="color:var(--danger);margin-top:8px;">${escHtml(errMsg)}</div>` : '';
+  openModal(`
+    <h2>Iniciar sesión</h2>
+    <div class="small">Tu progreso se sincroniza en la nube. Inicia sesión una vez por dispositivo.</div>
+    <label class="field" style="margin-top:12px;"><span class="lbl">Email</span>
+      <input type="email" id="login-email" class="input" autocomplete="username" autocapitalize="none" spellcheck="false"></label>
+    <label class="field"><span class="lbl">Contraseña</span>
+      <input type="password" id="login-pass" class="input" autocomplete="current-password"></label>
+    ${err}
+    <button class="btn primary" style="margin-top:14px;width:100%;" id="login-go">Entrar</button>
+  `);
+  const go = document.getElementById('login-go');
+  if(go) go.addEventListener('click', async () => {
+    const email = document.getElementById('login-email')?.value.trim();
+    const pass  = document.getElementById('login-pass')?.value;
+    go.disabled = true; go.textContent = 'Entrando…';
+    const { data, error } = await sb.auth.signInWithPassword({ email, password: pass });
+    if(error || !data?.user){ showLogin(error?.message || 'No se pudo entrar.'); return; }
+    _gymUid = data.user.id;
+    closeModal();
+    await bootWithSession();
+  });
+}
+window.showLogin = showLogin;
 
 /* Migración v2: recalcula 1RM con fórmula híbrida (Epley≤10 / Mayhew>10).
    Tests guardados con >10 reps tenían Epley inflado → derivaba cargas excesivas. */
@@ -2274,6 +2345,7 @@ $('#finish-session').addEventListener('click', () => {
   track('session_finish', { planRef: session.planRef, knee: session.kneeStatus, totalSets, doneSets, durSec, completedRatio: totalSets ? doneSets/totalSets : 0 });
   if(session.note) track('session_note', { len: session.note.length, text: session.note, planRef: session.planRef });
   DB.sessions.push(session);
+  pushSession(session);  // insert en gym_sessions (fire-and-forget)
   DB.sessionSets = {};
   DB._currentRef = null;
   DB._kneeStatus = null;
@@ -2473,9 +2545,8 @@ function renderConfig(){
   $('#cfg-wake').checked = !!DB.settings.wake;
   $('#cfg-autoprog').checked = DB.settings.autoProgress !== false;
   $('#cfg-telemetry').checked = DB.settings.telemetry !== false;
-  const gistChk = $('#cfg-gist'); if(gistChk) gistChk.checked = !!DB.settings.githubSync;
-  const gTok = $('#github-token'); if(gTok) gTok.value = DB.settings.githubToken || '';
-  const gId = $('#gist-id'); if(gId) gId.value = DB.settings.gistId || '';
+  const accEl = $('#account-status');
+  if(accEl){ sb.auth.getUser().then(({ data }) => { accEl.textContent = data?.user ? ('Conectado: ' + data.user.email) : 'Sin sesión'; }); }
   const ts = telemetrySummary();
   const topTypes = Object.entries(ts.types).sort((a,b)=>b[1]-a[1]).slice(0,3).map(([k,v])=>`${k}:${v}`).join(' · ');
   $('#telemetry-summary').innerHTML = ts.count
@@ -2524,25 +2595,23 @@ $('#clear-telemetry').addEventListener('click', () => {
   saveDB();
   renderConfig();
 });
-/* ----- Sync GitHub Gist: toggle, token, gist id, sync ahora, restaurar ----- */
-$('#cfg-gist').addEventListener('change', e => { DB.settings.githubSync = e.target.checked; saveDB(); });
-$('#github-token').addEventListener('change', e => { DB.settings.githubToken = e.target.value.trim(); saveDB(); });
-$('#gist-id').addEventListener('change', e => { DB.settings.gistId = e.target.value.trim(); saveDB(); });
-$('#gist-sync-now').addEventListener('click', async () => {
-  const st = $('#gist-status');
-  if(!syncEnabled(DB.settings)){
-    if(st){ st.textContent = 'Activa el sync y pega el token primero.'; st.style.color = 'var(--warn)'; }
-    return;
-  }
+/* ----- Cuenta Supabase: sincronizar ahora, cerrar sesión ----- */
+$('#sync-now').addEventListener('click', async () => {
+  const st = $('#sync-status');
+  if(!_gymUid){ if(st){ st.textContent = 'Sin sesión.'; st.style.color = 'var(--warn)'; } return; }
   if(st){ st.textContent = 'Sincronizando…'; st.style.color = 'var(--muted)'; }
-  const ok = await syncToGist(DB);
-  const gId = $('#gist-id'); if(gId) gId.value = DB.settings.gistId || '';
-  if(st){
-    st.textContent = ok ? ('✓ Sincronizado ' + new Date().toLocaleTimeString('es')) : '✗ Error — revisa token (permiso Gists R/W) y conexión.';
-    st.style.color = ok ? 'var(--success)' : 'var(--danger)';
+  try {
+    await pushGymState();
+    if(st){ st.textContent = '✓ Sincronizado ' + new Date().toLocaleTimeString('es'); st.style.color = 'var(--success)'; }
+  } catch(e){
+    if(st){ st.textContent = '✗ Error de red.'; st.style.color = 'var(--danger)'; }
   }
 });
-$('#gist-restore').addEventListener('click', () => restoreFromGist());
+$('#logout').addEventListener('click', async () => {
+  if(!confirm('¿Cerrar sesión? Tus datos quedan en la nube y en este equipo.')) return;
+  await sb.auth.signOut();
+  location.reload();
+});
 $('#edit-profile').addEventListener('click', () => {
   obStep = 1; showOnboarding();
 });
@@ -2600,19 +2669,49 @@ document.addEventListener('visibilitychange', () => { if(document.visibilityStat
 /* ============= BOOT ============= */
 function showApp(){ $('#onboarding').style.display='none'; $('#ob-actions').style.display='none'; $('#app').style.display=''; const lb = $('#logo-bear'); if(lb) lb.innerHTML = bearSVG('dumbbell', 30); show('home'); }
 
-migrateBaselineFormula();
-// Migración tags windows: si plan existe sin type/repMin/repMax → inyectar
-if(DB.plan?.weeks){
-  const firstEx = DB.plan.weeks[0]?.[0]?.exercises?.find(e => !e.isCardio && !e.noWeight);
-  if(firstEx && (firstEx.type === undefined || firstEx.repMin === undefined)){
-    tagPlanWithWindows();
-    DB.plan.objective = OBJECTIVE.id;
-    saveDB();
-  }
+async function fetchGymRows(uid){
+  const [profile, plan, settings, active, sessions] = await Promise.all([
+    sb.from('gym_profile').select('data').eq('user_id', uid).maybeSingle(),
+    sb.from('gym_plan').select('data').eq('user_id', uid).maybeSingle(),
+    sb.from('gym_settings').select('data').eq('user_id', uid).maybeSingle(),
+    sb.from('gym_active_session').select('data').eq('user_id', uid).maybeSingle(),
+    sb.from('gym_sessions').select('data').eq('user_id', uid).order('created_at', { ascending: true }),
+  ]);
+  return {
+    profile: profile.data, plan: plan.data, settings: settings.data,
+    active_session: active.data, sessions: sessions.data || [],
+  };
 }
-migrateDayCV3();
-if(!DB.profile){ showOnboarding(); }
-else { showApp(); }
+
+async function bootWithSession(){
+  // Hidratar desde la nube si hay datos remotos; si no, primer push desde el localStorage local.
+  let remote = null;
+  try { remote = await fetchGymRows(_gymUid); } catch(e){ remote = null; }
+  const remoteHasData = remote && (remote.profile || remote.plan || (remote.sessions && remote.sessions.length));
+  if(remoteHasData){
+    DB = hydrateGymDB(DEFAULT_DB, remote, DB.telemetry);
+    try { localStorage.setItem(STORE_KEY, JSON.stringify(DB)); } catch(e){}
+  }
+  // Migraciones (idempotentes) sobre el DB ya hidratado
+  migrateBaselineFormula();
+  if(DB.plan?.weeks){
+    const firstEx = DB.plan.weeks[0]?.[0]?.exercises?.find(e => !e.isCardio && !e.noWeight);
+    if(firstEx && (firstEx.type === undefined || firstEx.repMin === undefined)){
+      tagPlanWithWindows(); DB.plan.objective = OBJECTIVE.id; saveDB();
+    }
+  }
+  migrateDayCV3();
+  _sbReady = true;
+  subscribeGymRealtime();
+  if(!remoteHasData) pushGymState();  // primer push del estado local a la nube
+  if(!DB.profile){ showOnboarding(); } else { showApp(); }
+}
+
+(async () => {
+  const { data } = await sb.auth.getSession();
+  if(data?.session?.user){ _gymUid = data.session.user.id; await bootWithSession(); }
+  else { showLogin(); }
+})();
 
 if('serviceWorker' in navigator){
   navigator.serviceWorker.register('sw.js').catch(()=>{});

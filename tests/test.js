@@ -54,6 +54,19 @@ globalThis.navigator = {
 globalThis.URL = { createObjectURL: () => 'blob:stub', revokeObjectURL: noop };
 globalThis.Blob = class { constructor(parts, opts){ this.parts = parts; this.type = opts?.type; } };
 globalThis.Chart = class { constructor(){} destroy(){} };
+// Stub de Supabase: el boot ejecuta createClient + auth.getSession al cargar el script.
+const _sbBuilder = { upsert: async()=>({}), insert: async()=>({}),
+  select(){ return this; }, eq(){ return this; }, order(){ return this; }, maybeSingle: async()=>({ data:null }) };
+globalThis.supabase = { createClient: () => ({
+  auth: {
+    getSession: async()=>({ data:{ session:null } }),
+    getUser: async()=>({ data:{ user:null } }),
+    signInWithPassword: async()=>({ data:{ user:null }, error:{ message:'stub' } }),
+    signOut: async()=>({}),
+  },
+  channel: () => ({ on(){ return this; }, subscribe(){ return this; } }),
+  from: () => _sbBuilder,
+}) };
 globalThis.alert = noop;
 globalThis.confirm = () => true;
 globalThis.prompt = () => null;
@@ -75,7 +88,7 @@ try {
     analyzeWeightPattern, decideBump, applyProgression, tagPlanWithWindows,
     PROG_CAPS, DB, DAYC_ORDER, migrateDayCV3, rdlExercise, generateLocalPlan,
     parseHoldSec, isHoldEx, muscleTokens, suggestSwaps, escHtml, sessionHasProgress,
-    syncEnabled, mergeRestoredDB
+    pickSyncSettings, gymStateRows, hydrateGymDB, applyGymRealtime
   };`;
   exposed = new Function(code + '\n' + exposeReturn)();
 } catch(e) {
@@ -463,36 +476,86 @@ test('sessionHasProgress: null → false', () => assertFalse(sessionHasProgress(
 test('sessionHasProgress: progreso en 2º ejercicio → true', () =>
   assertTrue(sessionHasProgress({ '0': { sets: [{ done: false }] }, '1': { sets: [{ done: true }] } })));
 
-console.log('\n--- Sync GitHub Gist: syncEnabled / mergeRestoredDB ---');
-test('syncEnabled: off aunque haya token → false', () =>
-  assertFalse(syncEnabled({ githubSync: false, githubToken: 'github_pat_x' })));
-test('syncEnabled: on pero sin token → false', () =>
-  assertFalse(syncEnabled({ githubSync: true, githubToken: '' })));
-test('syncEnabled: on + token → true', () =>
-  assertTrue(syncEnabled({ githubSync: true, githubToken: 'github_pat_x' })));
-test('syncEnabled: null → false', () => assertFalse(syncEnabled(null)));
-test('mergeRestoredDB: conserva token y gistId LOCALES (no los remotos)', () => {
-  const remote = { profile: { x: 1 }, settings: { githubToken: 'REMOTE', gistId: 'REMOTEID', wake: true } };
-  const merged = mergeRestoredDB(DEFAULT_DB, remote, { githubToken: 'LOCAL', gistId: 'LOCALID' });
-  assertEq(merged.settings.githubToken, 'LOCAL', 'token local');
-  assertEq(merged.settings.gistId, 'LOCALID', 'gistId local');
+console.log('\n--- Sync Supabase: transformación DB ↔ filas ---');
+test('pickSyncSettings: solo wake/autoProgress/telemetry (sin github*)', () => {
+  const s = pickSyncSettings({ wake:true, autoProgress:false, telemetry:true, githubSync:true, githubToken:'x', gistId:'y' });
+  assertDeep(s, { wake:true, autoProgress:false, telemetry:true });
 });
-test('mergeRestoredDB: aplica data remota (profile + settings)', () => {
-  const remote = { profile: { x: 1 }, settings: { wake: true } };
-  const merged = mergeRestoredDB(DEFAULT_DB, remote, { githubToken: 'L', gistId: 'L' });
-  assertDeep(merged.profile, { x: 1 });
-  assertTrue(merged.settings.wake, 'setting remoto aplicado');
-  assertEq(merged.settings.autoProgress, true, 'default preservado');
+test('gymStateRows: arma 4 filas de fila única con user_id + data', () => {
+  const db = { profile:{w:75}, plan:{start:'2026'}, settings:{wake:true,autoProgress:true,telemetry:true},
+    sessionSets:{'0':{id:'x'}}, _currentRef:{w:0,d:1}, _kneeStatus:'bien', _adaptedSession:null, _sessionNote:'hola' };
+  const r = gymStateRows(db, 'UID');
+  assertEq(r.profile.user_id, 'UID');
+  assertDeep(r.profile.data, {w:75});
+  assertDeep(r.plan.data, {start:'2026'});
+  assertEq(r.settings.data.wake, true);
+  assertEq(r.settings.data.githubToken, undefined, 'settings no lleva github*');
+  assertDeep(r.active_session.data.sessionSets, {'0':{id:'x'}});
+  assertEq(r.active_session.data._sessionNote, 'hola');
+  assertDeep(r.active_session.data._currentRef, {w:0,d:1});
 });
-test('mergeRestoredDB: si local sin gistId, usa el remoto como fallback', () => {
-  const remote = { settings: { gistId: 'REMOTEID' } };
-  const merged = mergeRestoredDB(DEFAULT_DB, remote, { githubToken: 'L', gistId: '' });
-  assertEq(merged.settings.gistId, 'REMOTEID');
+test('hydrateGymDB: reconstruye DB desde filas + conserva telemetría local', () => {
+  const rows = {
+    profile: { data:{w:80} }, plan: { data:{start:'X'} },
+    settings: { data:{wake:true} },
+    active_session: { data:{ sessionSets:{'0':{id:'a'}}, _currentRef:{w:1,d:0}, _kneeStatus:'leve', _adaptedSession:null, _sessionNote:'n' } },
+    sessions: [ { data:{date:'d1'} }, { data:{date:'d2'} } ],
+  };
+  const localTel = { events:[{x:1}], version:1 };
+  const db = hydrateGymDB(DEFAULT_DB, rows, localTel);
+  assertDeep(db.profile, {w:80});
+  assertDeep(db.plan, {start:'X'});
+  assertEq(db.sessions.length, 2);
+  assertEq(db.sessions[0].date, 'd1');
+  assertDeep(db.sessionSets, {'0':{id:'a'}});
+  assertEq(db.settings.wake, true);
+  assertEq(db.settings.autoProgress, true, 'default preservado');
+  assertEq(db._kneeStatus, 'leve');
+  assertDeep(db.telemetry, localTel, 'telemetría local conservada, nunca remota');
 });
-test('DEFAULT_DB.settings tiene defaults de Gist (off, vacíos)', () => {
-  assertFalse(DEFAULT_DB.settings.githubSync);
-  assertEq(DEFAULT_DB.settings.githubToken, '');
-  assertEq(DEFAULT_DB.settings.gistId, '');
+test('hydrateGymDB: filas vacías → DEFAULT_DB limpio', () => {
+  const db = hydrateGymDB(DEFAULT_DB, { sessions:[] }, null);
+  assertEq(db.profile, null);
+  assertEq(db.plan, null);
+  assertDeep(db.sessions, []);
+  assertDeep(db.sessionSets, {});
+});
+test('DEFAULT_DB.settings ya no tiene campos github*', () => {
+  assertEq(DEFAULT_DB.settings.githubSync, undefined);
+  assertEq(DEFAULT_DB.settings.githubToken, undefined);
+  assertEq(DEFAULT_DB.settings.gistId, undefined);
+});
+
+console.log('\n--- Sync Supabase: merge realtime ---');
+test('applyGymRealtime: profile entrante actualiza DB.profile', () => {
+  const db = { profile:{w:70} };
+  const changed = applyGymRealtime(db, 'gym_profile', { data:{w:90} });
+  assertTrue(changed);
+  assertDeep(db.profile, {w:90});
+});
+test('applyGymRealtime: self-echo (data idéntica) → no cambia, devuelve false', () => {
+  const db = { profile:{w:70} };
+  const changed = applyGymRealtime(db, 'gym_profile', { data:{w:70} });
+  assertFalse(changed);
+});
+test('applyGymRealtime: active_session entrante actualiza sessionSets + flags', () => {
+  const db = { sessionSets:{}, _kneeStatus:null };
+  const changed = applyGymRealtime(db, 'gym_active_session', { data:{ sessionSets:{'0':{id:'z'}}, _kneeStatus:'dolor', _currentRef:null, _adaptedSession:null, _sessionNote:'' } });
+  assertTrue(changed);
+  assertDeep(db.sessionSets, {'0':{id:'z'}});
+  assertEq(db._kneeStatus, 'dolor');
+});
+test('applyGymRealtime: gym_sessions nueva se agrega si no existe (por date)', () => {
+  const db = { sessions:[{date:'d1'}] };
+  const changed = applyGymRealtime(db, 'gym_sessions', { data:{date:'d2'} });
+  assertTrue(changed);
+  assertEq(db.sessions.length, 2);
+});
+test('applyGymRealtime: gym_sessions duplicada (misma date) → no agrega', () => {
+  const db = { sessions:[{date:'d1'}] };
+  const changed = applyGymRealtime(db, 'gym_sessions', { data:{date:'d1'} });
+  assertFalse(changed);
+  assertEq(db.sessions.length, 1);
 });
 
 // ============= REPORT =============

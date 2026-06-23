@@ -1,4 +1,4 @@
-const CACHE = 'oso-gym-v54';
+const CACHE = 'oso-gym-v55';
 const ASSETS = [
   './',
   './index.html',
