@@ -25,28 +25,27 @@ App PWA de entrenamiento personal para preparación de trekking nivel 4, adaptad
 - Wake lock pantalla (no se apaga durante sesión)
 - Funciona offline (service worker)
 
-## Sync automático con GitHub Gist (multi-dispositivo)
+## Sync automático con Supabase (multi-dispositivo)
 
-Backup automático de toda tu data (perfil, plan, historial, sesiones) en un **Gist privado** de GitHub. Sincroniza ~4s después de cada cambio. Gratis, sin servidor, token revocable.
+Backup automático + sync multi-dispositivo de toda tu data (perfil, plan, historial, sesiones) en **Supabase** (Postgres + Auth + Realtime). Sincroniza ~4s después de cada cambio. Requiere login (1 vez por dispositivo).
 
-### Setup (una sola vez)
+### Setup (una sola vez, en el dashboard de Supabase)
 
-1. GitHub → **Settings → Developer settings → Personal access tokens → Fine-grained tokens** → *Generate new token*
-2. Permisos: **solo `Gists: Read and Write`** (nada más). Define una expiración si quieres.
-3. Copia el token (`github_pat_...`).
-4. En la app: **Config → ☁️ Sync con GitHub Gist** → pega el token → activa *Sync automático*.
-5. Pulsa **⬆ Sincronizar ahora**. La app crea el Gist privado y muestra el **Gist ID**.
+1. **SQL Editor** → pega `docs/supabase-setup.sql` → *Run* (crea las 5 tablas `gym_*` + RLS + realtime).
+2. **Authentication → Users → Add user** → tu email + contraseña. (Opcional: Authentication → Providers → Email → *Disable signups* para endurecer.)
+3. **Settings → API** → copia la `anon public` key → ponla en `SUPABASE_ANON_KEY` (constante en `index.html`).
 
-### Usar en otro dispositivo
+### Usar
 
-1. En el equipo nuevo: Config → pega el **mismo token** + el **Gist ID** (cópialo del equipo original).
-2. Pulsa **⬇ Restaurar** → recarga la app. Tienes toda tu data.
+- Abre la app → pantalla de login → entra con tu email + contraseña. La data se sincroniza sola.
+- **Otro dispositivo**: abre la app, inicia sesión con la misma cuenta → tu data aparece (hidratada de la nube, realtime).
+- Config → **☁️ Sincronización**: estado de cuenta, "Sincronizar ahora", "Cerrar sesión".
 
 ### Notas de seguridad
 
-- El token vive en `localStorage` de tu dispositivo. Está scopeado **solo a Gists** y puedes **revocarlo** en GitHub cuando quieras.
-- Un Gist "secret" (`public:false`) es **no listado**, pero accesible por su URL sin autenticación. La data **no va cifrada**. El Gist ID (32 hex) no es adivinable. Para datos de entrenamiento personales es un riesgo bajo y aceptable; no metas nada que no quieras que exista en un Gist.
-- La **telemetría NO se sincroniza** (se excluye del payload; puede pesar 100KB+).
+- La **publishable key** (`sb_publishable_...`) va hardcodeada en `index.html` (repo público). Es publicable por diseño; las tablas `gym_*` están protegidas por **RLS `auth.uid()`** → nadie accede a tu data sin login.
+- Proyecto **compartido con la app de viajes** (restricción free tier). La key compartida queda en el repo público → las tablas abiertas del viaje un poco más expuestas (riesgo bajo, ver spec §9).
+- La **telemetría NO se sincroniza** (vive solo en localStorage; puede pesar 100KB+).
 
 ## Instalar en iPhone
 

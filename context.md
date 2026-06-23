@@ -27,10 +27,10 @@ Claves persistentes (ver `CLAUDE.md` § localStorage para el shape completo):
 - `plan` — `weeks[w][d] = {focus, notes, exercises:[...]}`. 8 semanas × 3 días.
 - `sessions[]` — historial. Cada sesión: `{date, exercises[], planRef:{w,d}, kneeStatus, note}`.
 - `sessionSets{}` — **sesión en curso** (work buffer). `{idx: {id,name,isCardio,noWeight,unilateral,rest,sets[],note,userNote}}`.
-- `settings` — `{wake, autoProgress, telemetry, githubSync, githubToken, gistId}` (los 3 últimos = Gist sync, §15b).
+- `settings` — `{wake, autoProgress, telemetry}` (solo lo que sincroniza; sync Supabase §15b).
 - `telemetry` — `{events[], sessionId, startedAt, version}` (FIFO cap 2000).
 
-Claves efímeras (prefijo `_`, no en `DEFAULT_DB`): `_currentRef`, `_kneeStatus`, `_adaptedSession`, `_sessionNote`, `_collapsedEx`/`_userExpanded`/`_noteOpen` (Sets in-memory), `_progSnapshot`, `_swapReason`, `_gistSyncTimer`.
+Claves efímeras (prefijo `_`, no en `DEFAULT_DB`): `_currentRef`, `_kneeStatus`, `_adaptedSession`, `_sessionNote`, `_collapsedEx`/`_userExpanded`/`_noteOpen` (Sets in-memory), `_progSnapshot`, `_swapReason`, `_sbSyncTimer`, `_gymUid`, `_sbReady`.
 
 `sessionSets` vs `sessions`: `sessionSets` es lo que estás haciendo AHORA (editable). Al `Finalizar sesión` se serializa a `sessions[]` y `sessionSets` se vacía.
 
@@ -151,18 +151,22 @@ Export JSON desde Config → análisis offline (fricciones, conceptos confusos, 
 - `openModal(html)`/`closeModal()` — modales (preferir sobre `alert/confirm` en PWA iOS).
 - `saveDB()` — persiste `DB` a localStorage tras cada mutación. **Resiliente a quota**: si `setItem` lanza, recorta `telemetry.events` a la mitad y reintenta (el progreso de rutina no se pierde por falta de espacio). Flush extra en `visibilitychange`/`pagehide` (iOS mata la PWA al backgroundear).
 - `sessionHasProgress(sessionSets)` — ¿hay serie `done` o `userAdded`? Usado por el guard de `renderRutina` para **nunca descartar** una sesión con trabajo real aunque diverja del plan (anti-pérdida; telemetría `session_preserved`).
-- `saveDB()` también llama `scheduleGistSync()` → backup en GitHub Gist (debounced 4s) si `settings.githubSync`.
+- `saveDB()` también llama `scheduleSupabaseSync()` → upsert a Supabase (debounced 4s) si hay sesión (`_gymUid` + `_sbReady`).
 
-## 15b. Sync con GitHub Gist (backup nube opcional, default OFF)
+## 15b. Sync Supabase (auth + Postgres + realtime, requiere login)
 
-- `settings.githubSync/githubToken/gistId`. `syncEnabled(settings)` = `githubSync && githubToken`.
-- `scheduleGistSync()` (debounce 4s, llamado por `saveDB`) → `syncToGist(db)`: fire-and-forget, excluye `telemetry.events`. 1er sync `POST /gists` (guarda `gistId` con `localStorage.setItem` directo, sin `saveDB` → evita recursión); siguientes `PATCH`.
-- `restoreFromGist()` (botón Config + dispositivo nuevo): `GET /gists/:id` → `mergeRestoredDB(DEFAULT_DB, remote, localSettings)` conserva token + gistId locales, aplica resto remoto → `saveDB` + recarga.
-- UI en Config: toggle, token (`password`), Gist ID (editable, para pegar en otro equipo), "Sincronizar ahora" (feedback en `#gist-status`), "Restaurar". Setup en README. ⚠ Gist secret = no listado, accesible por URL, sin cifrar.
+Proyecto compartido con la app de viajes (`gbfxpzsblnrasfvxnquk`). Cliente `@supabase/supabase-js` vendorizado (`vendor/supabase.js`). Constantes `SUPABASE_URL`/`SUPABASE_ANON_KEY` + `sb = createClient(...)` en `index.html`.
+
+- **Tablas `gym_*`** (RLS `auth.uid()=user_id`): `gym_profile`/`gym_plan`/`gym_settings`/`gym_active_session` (fila única, `data jsonb`) + `gym_sessions` (1 fila/sesión). Telemetría NO sincroniza.
+- **Puras (testeadas)**: `pickSyncSettings`, `gymStateRows(db,uid)`, `hydrateGymDB(defaultDB,rows,localTel)`, `applyGymRealtime(db,table,row)` (merge realtime, ignora self-echo).
+- **Glue**: `scheduleSupabaseSync()` (debounce 4s) → `pushGymState()` (upsert 4 tablas fila única, idempotente). `pushSession(session)` (insert `gym_sessions` al finalizar). `fetchGymRows(uid)` + `bootWithSession()` (hidrata o primer push). `subscribeGymRealtime()` (canal `gym-sync`, `postgres_changes` por `user_id`). `showLogin(err)` (modal auth).
+- **Boot**: IIFE `sb.auth.getSession()` → con sesión `bootWithSession()`, sin sesión `showLogin()`.
+- **UI Config**: card "Sincronización (Supabase)" — `#account-status` (email), `#sync-now`, `#logout`.
+- ⚠ Publishable key hardcodeada en repo público (publicable por diseño; gym protegido por RLS). Riesgo asumido §9 del spec.
 
 ## 16. Tests — `tests/test.js`
 
-Harness: stub DOM/localStorage/navigator/`addEventListener`/`matchMedia` + `new Function(code + 'return {bindings}')()` para extraer const/function. Bindings expuestos incluyen las funciones puras (`parseHoldSec, isHoldEx, muscleTokens, suggestSwaps, escHtml, sessionHasProgress, syncEnabled, mergeRestoredDB`, etc.). Correr `node tests/test.js` antes de commit. **Agregar tests al añadir lógica testeable.** 155 tests hoy.
+Harness: stub DOM/localStorage/navigator/`addEventListener`/`matchMedia`/`supabase` (mock de `createClient`) + `new Function(code + 'return {bindings}')()` para extraer const/function. El boot corre durante la carga (IIFE `getSession` → `showLogin`, stubbeado). Bindings expuestos incluyen las funciones puras (`parseHoldSec, isHoldEx, muscleTokens, suggestSwaps, escHtml, sessionHasProgress, pickSyncSettings, gymStateRows, hydrateGymDB, applyGymRealtime`, etc.). Correr `node tests/test.js` antes de commit. **Agregar tests al añadir lógica testeable.** 157 tests hoy.
 
 ## 17. Deploy
 

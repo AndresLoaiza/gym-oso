@@ -34,7 +34,8 @@ App web móvil PWA de entrenamiento para **Andrés "El Oso" Loaiza** (Medellín)
   - **A11y**: `:focus-visible` global (ring de teclado/switch, no molesta a touch) + `@media (prefers-reduced-motion: reduce)` (mata animaciones/transiciones/scroll; el `scrollIntoView` JS también lo respeta vía `matchMedia`). `.modal::before` = grabber de bottom-sheet (affordance de desechar; tap-backdrop ya cierra). `.btn.small` min-height 36px, `.ex-act` 40px (touch). `details.card` = sección plegable con aspecto de card.
 - `fonts/` → 16 woff2 **self-hosted** (Bebas Neue · DM Sans 300-700 · DM Mono 400/500, OFL, subsets latin+latin-ext). Sin dependencia de Google Fonts → funciona 100% offline.
 - **Mascota El Oso** (`BEARS_PNG` en `osos-imgs.js` + `bearSVG(name,size)` en `index.html`): 5 osos chibi **PNG base64** (rest/dumbbell/press/bike/stairs), generados con **Ideogram** (fondo transparente, charcoal + acentos lila + crema). `bearSVG()` devuelve `<img>` (nombre histórico; antes SVG inline). Offline, sin requests (base64). PNG fuente 1024 en `assets/osos-src/`; base64 regenerable con `gen_osos.py`. **Regla: solo en estados positivos/motivacionales** — logo header (dumbbell 30px), bienvenida onboarding (dumbbell 140px), card "Hoy" (`bearForFocus`), plan completo + fin de sesión + modal de progresión (rest). NUNCA en carga/error/destructivo. Las fotos de máquinas (`thumb()`/`catalogo-imgs.js`) NO se reemplazan — el oso es aditivo.
-- `manifest.json` + `sw.js` → PWA instalable + offline cache (precachea `elosogym.css` + `osos-imgs.js` + los 16 fonts)
+- `manifest.json` + `sw.js` → PWA instalable + offline cache (precachea `elosogym.css` + `osos-imgs.js` + `vendor/supabase.js` + los 16 fonts)
+- `vendor/supabase.js` → `@supabase/supabase-js` UMD vendorizado (self-hosted, offline). Cliente de sync/auth/realtime.
 - `catalogo-imgs.js` → 25 thumbnails base64 (229 KB)
 - `osos-imgs.js` → 5 osos mascota PNG base64 (72 KB, Ideogram)
 - `Chart.js@4.4.1` vía CDN para gráficas
@@ -85,8 +86,7 @@ Harness: stub DOM/localStorage/navigator + `new Function(code + 'return {binding
   "sessionSets": { "0": {id, name, isCardio, noWeight, rest, note,
                          userNote:"nota del usuario por ejercicio",
                          sets:[{reps,weight,done,userAdded?}]} },
-  "settings": { "wake": false, "autoProgress": true, "telemetry": true,
-                "githubSync": false, "githubToken": "", "gistId": "" },
+  "settings": { "wake": false, "autoProgress": true, "telemetry": true },
   "lastExport": "ISO",
   "_currentRef": {w,d},
   "_kneeStatus": "bien|leve|dolor",
@@ -212,20 +212,24 @@ Harness: stub DOM/localStorage/navigator + `new Function(code + 'return {binding
 - **Auto-progresión** toggle (default ON) — ajusta pesos del plan al finalizar sesión
 - **Telemetría UX** toggle (default ON) — acumula eventos de uso para análisis de fricciones, 100% local. Botón export JSON + clear. Summary muestra count + días + top tipos
 - **Backup / Restore JSON** — exportar todo a archivo, importar desde archivo (sobrevive borrado de app, cambio de celular)
-- **☁️ Sync con GitHub Gist** (default OFF) — backup automático en Gist privado. Toggle + input token (`password`) + input Gist ID + "Sincronizar ahora" + "Restaurar". Ver § Sync GitHub Gist.
+- **☁️ Sincronización (Supabase)** — backup automático + multi-dispositivo. Card muestra estado de cuenta ("Conectado: email"), "Sincronizar ahora", "Cerrar sesión". Requiere login (ver § Sync Supabase).
 - Reiniciar onboarding (re-genera plan con baselines actualizados)
-- _Sin servidor propio — la única integración externa opcional es GitHub Gist (backup), 100% bajo el token del usuario_
+- _Sin servidor propio — la integración externa es Supabase (auth + Postgres + realtime), proyecto compartido con la app de viajes_
 
-## Sync con GitHub Gist
+## Sync Supabase
 
-Backup automático opcional en un **Gist privado** de GitHub (multi-dispositivo). Setup detallado en `README.md`. Default OFF.
+Backup automático + sync multi-dispositivo en **Supabase** (Postgres + Auth + Realtime). Reusa el **proyecto compartido con la app de viajes** (`gbfxpzsblnrasfvxnquk`, restricción free tier = máx. 2 proyectos). Requiere login. Setup en `README.md` + SQL en `docs/supabase-setup.sql`.
 
-- **`DB.settings`**: `githubSync` (bool), `githubToken` (`github_pat_...`, fine-grained, scope **solo Gists R/W**), `gistId` (creado en el 1er sync, persiste).
-- **`syncToGist(db)`** — fire-and-forget, nunca rompe la app (try/catch, devuelve bool). Excluye `telemetry.events` del payload (puede pesar 100KB+). 1er sync → `POST /gists` (crea, guarda `gistId` vía `localStorage.setItem` directo, **sin** `saveDB()` para evitar recursión). Siguientes → `PATCH /gists/:id`.
-- **Debounce**: `saveDB()` llama `scheduleGistSync()` que debounce **4s** tras el último cambio → no spamea la API de GitHub (saveDB corre en cada tecla).
-- **`restoreFromGist()`** — `GET /gists/:id`, `mergeRestoredDB(DEFAULT_DB, remote, localSettings)` conserva **token y gistId LOCALES** (los del equipo actual), aplica el resto remoto. Modal con recarga.
-- **`syncEnabled(settings)`** → `githubSync && githubToken`. Helpers puros testeados.
-- ⚠ **Seguridad**: Gist "secret" = no listado pero accesible por URL sin auth, **sin cifrar**. Token en localStorage, scopeado a Gists, revocable. Riesgo bajo para datos de entrenamiento personales.
+- **Cliente**: `@supabase/supabase-js` **vendorizado** en `vendor/supabase.js` (offline-first, precacheado en `sw.js`). `createClient(SUPABASE_URL, SUPABASE_ANON_KEY)` en `index.html` (constantes hardcodeadas).
+- **Auth**: email+password, 1 cuenta. Boot gated: sin sesión → `showLogin()` (modal); con sesión → `bootWithSession()`. `persistSession` (1 login por dispositivo).
+- **5 tablas `gym_*`** (prefijo evita colisión con el viaje), keyed por `auth.uid()`, RLS `auth.uid() = user_id`:
+  - `gym_profile`/`gym_plan`/`gym_settings`/`gym_active_session` (fila única, `data jsonb`) + `gym_sessions` (1 fila/sesión).
+  - **Telemetría NO sincroniza** — vive solo en localStorage (puede pesar 100KB+).
+- **Transformación pura** (testeada): `pickSyncSettings` (settings sin credenciales), `gymStateRows(db, uid)` (DB→4 filas), `hydrateGymDB(defaultDB, rows, localTelemetry)` (filas→DB, conserva telemetría local), `applyGymRealtime(db, table, row)` (merge realtime, ignora self-echo).
+- **Push**: `saveDB()` → `scheduleSupabaseSync()` (debounce **4s**) → `pushGymState()` upsert de las 4 tablas de fila única (idempotente, sin dirty-tracking). `pushSession(session)` inserta en `gym_sessions` al finalizar. Fire-and-forget (offline → reintenta al próximo saveDB; localStorage es la fuente primaria).
+- **Boot**: `fetchGymRows(uid)` (select de las 5 tablas) → si hay datos remotos `hydrateGymDB`; si no, primer `pushGymState()` (migra el localStorage local a la nube). Migraciones idempotentes corren sobre el DB ya hidratado.
+- **Realtime**: `subscribeGymRealtime()` — canal `gym-sync`, `postgres_changes` por tabla filtrado por `user_id`. Cambio entrante → `applyGymRealtime` → si cambió, persiste + re-render. Last-write-wins por fila.
+- ⚠ **Seguridad**: la publishable key (`sb_publishable_...`) va hardcodeada en el repo público — es publicable por diseño y las tablas `gym_*` están protegidas por RLS `auth.uid()`. Riesgo asumido: la key compartida (ya pública en el bundle del viaje) queda más fácil de encontrar → las tablas **abiertas del viaje** un poco más expuestas (riesgo bajo). Ver `docs/superpowers/specs/2026-06-22-supabase-sync-design.md` §9.
 
 ## Telemetría UX
 
@@ -398,7 +402,8 @@ Al modificar `index.html`, **bump versión cache** en `sw.js` (`const CACHE = 'o
 
 ## Próximas mejoras posibles
 
-- [ ] Sincronización iCloud / Supabase (multi-dispositivo)
+- [x] Sincronización Supabase (multi-dispositivo, auth + realtime) — ver § Sync Supabase
+- [ ] Reconciliación de `gym_sessions`: si `pushSession` falla offline, la sesión queda en localStorage pero no en la nube. Al reconectar, comparar `DB.sessions` vs `gym_sessions` remoto e insertar las faltantes.
 - [ ] Correlación gráfica: progreso vs `kneeStatus` (¿la molestia frena ganancias?)
 - [ ] Recordatorios push (requiere web push + permisos)
 - [ ] Foto pre/post sesión para diario visual
