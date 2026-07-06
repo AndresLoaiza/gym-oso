@@ -494,6 +494,18 @@ test('gymStateRows: arma 4 filas de fila única con user_id + data', () => {
   assertEq(r.active_session.data._sessionNote, 'hola');
   assertDeep(r.active_session.data._currentRef, {w:0,d:1});
 });
+test('gymStateRows: incluye fila telemetry (push-only backup)', () => {
+  const tel = { events:[{t:'x',type:'screen_view'}], sessionId:null, startedAt:'s', version:1 };
+  const r = gymStateRows({ telemetry: tel }, 'UID');
+  assertEq(r.telemetry.user_id, 'UID');
+  assertDeep(r.telemetry.data, tel);
+});
+test('hydrateGymDB: ignora telemetry remota aunque venga en rows (local manda)', () => {
+  const rows = { sessions:[], telemetry: { data:{ events:[{x:'remoto'}], version:1 } } };
+  const localTel = { events:[], version:1 };
+  const db = hydrateGymDB(DEFAULT_DB, rows, localTel);
+  assertDeep(db.telemetry, localTel);
+});
 test('hydrateGymDB: reconstruye DB desde filas + conserva telemetría local', () => {
   const rows = {
     profile: { data:{w:80} }, plan: { data:{start:'X'} },

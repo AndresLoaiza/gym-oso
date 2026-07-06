@@ -315,6 +315,8 @@ function gymStateRows(db, uid){
       _adaptedSession: db._adaptedSession ?? null,
       _sessionNote:    db._sessionNote ?? '',
     } },
+    // Telemetría: backup PUSH-ONLY (last-write-wins). Nunca se hidrata al boot — el buffer local manda.
+    telemetry: { user_id: uid, data: db.telemetry ?? null },
   };
 }
 // Filas remotas → DB en memoria. Conserva la telemetría LOCAL (nunca viene del remoto).
@@ -386,6 +388,7 @@ async function pushGymState(){
       sb.from('gym_plan').upsert({ ...r.plan, updated_at: stamp }),
       sb.from('gym_settings').upsert({ ...r.settings, updated_at: stamp }),
       sb.from('gym_active_session').upsert({ ...r.active_session, updated_at: stamp }),
+      sb.from('gym_telemetry').upsert({ ...r.telemetry, updated_at: stamp }),
     ]);
   } catch(e){ /* offline / error de red: el estado vive en localStorage, se reintenta al próximo saveDB */ }
 }
