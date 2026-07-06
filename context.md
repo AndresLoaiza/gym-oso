@@ -153,16 +153,16 @@ Export JSON desde Config → análisis offline (fricciones, conceptos confusos, 
 - `sessionHasProgress(sessionSets)` — ¿hay serie `done` o `userAdded`? Usado por el guard de `renderRutina` para **nunca descartar** una sesión con trabajo real aunque diverja del plan (anti-pérdida; telemetría `session_preserved`).
 - `saveDB()` también llama `scheduleSupabaseSync()` → upsert a Supabase (debounced 4s) si hay sesión (`_gymUid` + `_sbReady`).
 
-## 15b. Sync Supabase (auth + Postgres + realtime, requiere login)
+## 15b. Sync Supabase (Postgres + realtime, SIN login)
 
-Proyecto compartido con la app de viajes (`gbfxpzsblnrasfvxnquk`). Cliente `@supabase/supabase-js` vendorizado (`vendor/supabase.js`). Constantes `SUPABASE_URL`/`SUPABASE_ANON_KEY` + `sb = createClient(...)` en `index.html`.
+Proyecto compartido con la app de viajes (`gbfxpzsblnrasfvxnquk`). Cliente `@supabase/supabase-js` vendorizado (`vendor/supabase.js`). Constantes `SUPABASE_URL`/`SUPABASE_ANON_KEY` + `const _gymUid` (UID fijo, único usuario) + `sb = createClient(...)` en `index.html`.
 
-- **Tablas `gym_*`** (RLS `auth.uid()=user_id`): `gym_profile`/`gym_plan`/`gym_settings`/`gym_active_session` (fila única, `data jsonb`) + `gym_sessions` (1 fila/sesión). Telemetría NO sincroniza.
-- **Puras (testeadas)**: `pickSyncSettings`, `gymStateRows(db,uid)`, `hydrateGymDB(defaultDB,rows,localTel)`, `applyGymRealtime(db,table,row)` (merge realtime, ignora self-echo).
-- **Glue**: `scheduleSupabaseSync()` (debounce 4s) → `pushGymState()` (upsert 4 tablas fila única, idempotente). `pushSession(session)` (insert `gym_sessions` al finalizar). `fetchGymRows(uid)` + `bootWithSession()` (hidrata o primer push). `subscribeGymRealtime()` (canal `gym-sync`, `postgres_changes` por `user_id`). `showLogin(err)` (modal auth).
-- **Boot**: IIFE `sb.auth.getSession()` → con sesión `bootWithSession()`, sin sesión `showLogin()`.
-- **UI Config**: card "Sincronización (Supabase)" — `#account-status` (email), `#sync-now`, `#logout`.
-- ⚠ Publishable key hardcodeada en repo público (publicable por diseño; gym protegido por RLS). Riesgo asumido §9 del spec.
+- **6 tablas `gym_*`** (RLS `anon_all` — abierta, decisión user 2026-06-23): `gym_profile`/`gym_plan`/`gym_settings`/`gym_active_session`/`gym_telemetry` (fila única, `data jsonb`) + `gym_sessions` (1 fila/sesión). Telemetría = push-only backup (se sube, nunca se hidrata).
+- **Puras (testeadas)**: `pickSyncSettings`, `gymStateRows(db,uid)` (5 filas), `hydrateGymDB(defaultDB,rows,localTel)` (ignora telemetría remota), `applyGymRealtime(db,table,row)` (merge realtime, ignora self-echo).
+- **Glue**: `scheduleSupabaseSync()` (debounce 4s) → `pushGymState()` (upsert 5 tablas fila única, idempotente). `pushSession(session)` (insert `gym_sessions` al finalizar). `fetchGymRows(uid)` + `bootWithSession()` (hidrata o primer push). `subscribeGymRealtime()` (canal `gym-sync`, `postgres_changes` por `user_id`).
+- **Boot**: `bootWithSession()` directo, sin gate de auth.
+- **UI Config**: card "Sincronización (Supabase)" — `#sync-now` + `#sync-status`.
+- ⚠ Key pública + RLS abierta ⇒ datos gym legibles/escribibles por cualquiera con la key (riesgo asumido; datos gimnasio). Login+RLS auth.uid() reversible desde commit `37961c4`.
 
 ## 16. Tests — `tests/test.js`
 

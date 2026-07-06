@@ -168,11 +168,9 @@
     <div class="card">
       <h3>☁️ Sincronización (Supabase)</h3>
       <div class="small">Backup automático y multi-dispositivo. Sincroniza ~4s después de cada cambio (sin telemetría).</div>
-      <div class="small" id="account-status" style="margin-top:8px;color:var(--muted);min-height:16px;">—</div>
-      <div class="small" id="sync-status" style="margin-top:2px;min-height:16px;color:var(--muted);"></div>
+      <div class="small" id="sync-status" style="margin-top:8px;min-height:16px;color:var(--muted);"></div>
       <div class="btn-row" style="margin-top:10px;gap:8px;">
         <button class="btn primary" id="sync-now" style="flex:1;">⬆ Sincronizar ahora</button>
-        <button class="btn" id="logout">Cerrar sesión</button>
       </div>
     </div>
     <div class="card">
@@ -243,14 +241,13 @@ const CATALOGO = [
 const STORE_KEY = 'elosoGymV2';
 
 /* ===== Supabase (proyecto compartido con la app de viajes) =====
-   La publishable key es publicable por diseño; las tablas gym_* están protegidas
-   por RLS auth.uid(). Ver docs/superpowers/specs/2026-06-22-supabase-sync-design.md §9. */
+   Sin login (decisión user 2026-06-23, único usuario): RLS de gym_* abierta a la
+   anon key + UID fijo. Datos gym accesibles para quien tenga la key (pública en
+   este repo) — riesgo asumido, igual que las tablas del viaje. */
 const SUPABASE_URL = 'https://gbfxpzsblnrasfvxnquk.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_mRvhm4a-U8F9NqBNe4fNiQ_q_0cYLiD';
-const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-  auth: { persistSession: true, autoRefreshToken: true },
-});
-let _gymUid = null;  // uuid del usuario autenticado, o null
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const _gymUid = 'ea8ea549-eacb-465c-9883-778cad0fcf20';  // UID fijo (único usuario)
 const DEFAULT_DB = {
   profile: null, // {weight, height, age, knee, trekDate, baseline}
   plan: null,    // {start, weeks: [[{focus, exercises:[...]}, ...]]}
@@ -418,32 +415,7 @@ function subscribeGymRealtime(){
   ch.subscribe();
 }
 
-// ----- Login (auth email+password) -----
-function showLogin(errMsg){
-  const err = errMsg ? `<div class="small" style="color:var(--danger);margin-top:8px;">${escHtml(errMsg)}</div>` : '';
-  openModal(`
-    <h2>Iniciar sesión</h2>
-    <div class="small">Tu progreso se sincroniza en la nube. Inicia sesión una vez por dispositivo.</div>
-    <label class="field" style="margin-top:12px;"><span class="lbl">Email</span>
-      <input type="email" id="login-email" class="input" autocomplete="username" autocapitalize="none" spellcheck="false"></label>
-    <label class="field"><span class="lbl">Contraseña</span>
-      <input type="password" id="login-pass" class="input" autocomplete="current-password"></label>
-    ${err}
-    <button class="btn primary" style="margin-top:14px;width:100%;" id="login-go">Entrar</button>
-  `);
-  const go = document.getElementById('login-go');
-  if(go) go.addEventListener('click', async () => {
-    const email = document.getElementById('login-email')?.value.trim();
-    const pass  = document.getElementById('login-pass')?.value;
-    go.disabled = true; go.textContent = 'Entrando…';
-    const { data, error } = await sb.auth.signInWithPassword({ email, password: pass });
-    if(error || !data?.user){ showLogin(error?.message || 'No se pudo entrar.'); return; }
-    _gymUid = data.user.id;
-    closeModal();
-    await bootWithSession();
-  });
-}
-window.showLogin = showLogin;
+// (Sin login: la app arranca directo con UID fijo — ver constantes Supabase arriba.)
 
 /* Migración v2: recalcula 1RM con fórmula híbrida (Epley≤10 / Mayhew>10).
    Tests guardados con >10 reps tenían Epley inflado → derivaba cargas excesivas. */
@@ -2548,8 +2520,6 @@ function renderConfig(){
   $('#cfg-wake').checked = !!DB.settings.wake;
   $('#cfg-autoprog').checked = DB.settings.autoProgress !== false;
   $('#cfg-telemetry').checked = DB.settings.telemetry !== false;
-  const accEl = $('#account-status');
-  if(accEl){ sb.auth.getUser().then(({ data }) => { accEl.textContent = data?.user ? ('Conectado: ' + data.user.email) : 'Sin sesión'; }); }
   const ts = telemetrySummary();
   const topTypes = Object.entries(ts.types).sort((a,b)=>b[1]-a[1]).slice(0,3).map(([k,v])=>`${k}:${v}`).join(' · ');
   $('#telemetry-summary').innerHTML = ts.count
@@ -2609,11 +2579,6 @@ $('#sync-now').addEventListener('click', async () => {
   } catch(e){
     if(st){ st.textContent = '✗ Error de red.'; st.style.color = 'var(--danger)'; }
   }
-});
-$('#logout').addEventListener('click', async () => {
-  if(!confirm('¿Cerrar sesión? Tus datos quedan en la nube y en este equipo.')) return;
-  await sb.auth.signOut();
-  location.reload();
 });
 $('#edit-profile').addEventListener('click', () => {
   obStep = 1; showOnboarding();
@@ -2710,11 +2675,7 @@ async function bootWithSession(){
   if(!DB.profile){ showOnboarding(); } else { showApp(); }
 }
 
-(async () => {
-  const { data } = await sb.auth.getSession();
-  if(data?.session?.user){ _gymUid = data.session.user.id; await bootWithSession(); }
-  else { showLogin(); }
-})();
+bootWithSession();
 
 if('serviceWorker' in navigator){
   navigator.serviceWorker.register('sw.js').catch(()=>{});

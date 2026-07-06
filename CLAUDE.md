@@ -212,24 +212,23 @@ Harness: stub DOM/localStorage/navigator + `new Function(code + 'return {binding
 - **Auto-progresión** toggle (default ON) — ajusta pesos del plan al finalizar sesión
 - **Telemetría UX** toggle (default ON) — acumula eventos de uso para análisis de fricciones, 100% local. Botón export JSON + clear. Summary muestra count + días + top tipos
 - **Backup / Restore JSON** — exportar todo a archivo, importar desde archivo (sobrevive borrado de app, cambio de celular)
-- **☁️ Sincronización (Supabase)** — backup automático + multi-dispositivo. Card muestra estado de cuenta ("Conectado: email"), "Sincronizar ahora", "Cerrar sesión". Requiere login (ver § Sync Supabase).
+- **☁️ Sincronización (Supabase)** — backup automático + multi-dispositivo, sin login. Card con "Sincronizar ahora" + status (ver § Sync Supabase).
 - Reiniciar onboarding (re-genera plan con baselines actualizados)
 - _Sin servidor propio — la integración externa es Supabase (auth + Postgres + realtime), proyecto compartido con la app de viajes_
 
 ## Sync Supabase
 
-Backup automático + sync multi-dispositivo en **Supabase** (Postgres + Auth + Realtime). Reusa el **proyecto compartido con la app de viajes** (`gbfxpzsblnrasfvxnquk`, restricción free tier = máx. 2 proyectos). Requiere login. Setup en `README.md` + SQL en `docs/supabase-setup.sql`.
+Backup automático + sync multi-dispositivo en **Supabase** (Postgres + Realtime). Reusa el **proyecto compartido con la app de viajes** (`gbfxpzsblnrasfvxnquk`, restricción free tier = máx. 2 proyectos). **Sin login** (decisión user 2026-06-23, único usuario): UID fijo hardcodeado + RLS `anon_all` en las tablas `gym_*`. SQL en `docs/supabase-setup.sql`.
 
-- **Cliente**: `@supabase/supabase-js` **vendorizado** en `vendor/supabase.js` (offline-first, precacheado en `sw.js`). `createClient(SUPABASE_URL, SUPABASE_ANON_KEY)` en `index.html` (constantes hardcodeadas).
-- **Auth**: email+password, 1 cuenta. Boot gated: sin sesión → `showLogin()` (modal); con sesión → `bootWithSession()`. `persistSession` (1 login por dispositivo).
-- **5 tablas `gym_*`** (prefijo evita colisión con el viaje), keyed por `auth.uid()`, RLS `auth.uid() = user_id`:
-  - `gym_profile`/`gym_plan`/`gym_settings`/`gym_active_session` (fila única, `data jsonb`) + `gym_sessions` (1 fila/sesión).
-  - **Telemetría NO sincroniza** — vive solo en localStorage (puede pesar 100KB+).
-- **Transformación pura** (testeada): `pickSyncSettings` (settings sin credenciales), `gymStateRows(db, uid)` (DB→4 filas), `hydrateGymDB(defaultDB, rows, localTelemetry)` (filas→DB, conserva telemetría local), `applyGymRealtime(db, table, row)` (merge realtime, ignora self-echo).
-- **Push**: `saveDB()` → `scheduleSupabaseSync()` (debounce **4s**) → `pushGymState()` upsert de las 4 tablas de fila única (idempotente, sin dirty-tracking). `pushSession(session)` inserta en `gym_sessions` al finalizar. Fire-and-forget (offline → reintenta al próximo saveDB; localStorage es la fuente primaria).
-- **Boot**: `fetchGymRows(uid)` (select de las 5 tablas) → si hay datos remotos `hydrateGymDB`; si no, primer `pushGymState()` (migra el localStorage local a la nube). Migraciones idempotentes corren sobre el DB ya hidratado.
+- **Cliente**: `@supabase/supabase-js` **vendorizado** en `vendor/supabase.js` (offline-first, precacheado en `sw.js`). `createClient(SUPABASE_URL, SUPABASE_ANON_KEY)` + `const _gymUid` (UID fijo) en `index.html`.
+- **6 tablas `gym_*`** (prefijo evita colisión con el viaje), keyed por `user_id` (constante), RLS abierta a anon:
+  - `gym_profile`/`gym_plan`/`gym_settings`/`gym_active_session`/`gym_telemetry` (fila única, `data jsonb`) + `gym_sessions` (1 fila/sesión).
+  - **Telemetría**: push-only backup a `gym_telemetry` — se sube en cada sync pero **NUNCA se hidrata** (el buffer local de cada dispositivo manda).
+- **Transformación pura** (testeada): `pickSyncSettings` (settings sin credenciales), `gymStateRows(db, uid)` (DB→5 filas), `hydrateGymDB(defaultDB, rows, localTelemetry)` (filas→DB, conserva telemetría local), `applyGymRealtime(db, table, row)` (merge realtime, ignora self-echo).
+- **Push**: `saveDB()` → `scheduleSupabaseSync()` (debounce **4s**) → `pushGymState()` upsert de las 5 tablas de fila única (idempotente, sin dirty-tracking). `pushSession(session)` inserta en `gym_sessions` al finalizar. Fire-and-forget (offline → reintenta al próximo saveDB; localStorage es la fuente primaria).
+- **Boot**: `bootWithSession()` directo (sin gate de auth) → `fetchGymRows(uid)` → si hay datos remotos `hydrateGymDB`; si no, primer `pushGymState()`. Migraciones idempotentes corren sobre el DB ya hidratado.
 - **Realtime**: `subscribeGymRealtime()` — canal `gym-sync`, `postgres_changes` por tabla filtrado por `user_id`. Cambio entrante → `applyGymRealtime` → si cambió, persiste + re-render. Last-write-wins por fila.
-- ⚠ **Seguridad**: la publishable key (`sb_publishable_...`) va hardcodeada en el repo público — es publicable por diseño y las tablas `gym_*` están protegidas por RLS `auth.uid()`. Riesgo asumido: la key compartida (ya pública en el bundle del viaje) queda más fácil de encontrar → las tablas **abiertas del viaje** un poco más expuestas (riesgo bajo). Ver `docs/superpowers/specs/2026-06-22-supabase-sync-design.md` §9.
+- ⚠ **Seguridad (riesgo asumido, decisión user)**: publishable key en repo público + RLS abierta ⇒ **cualquiera con la key puede leer/escribir los datos gym** (peso, edad, sesiones, telemetría). Mismo modelo "privacidad por oscuridad" que la app de viajes. Datos de gimnasio = sensibilidad baja. Reversible: reactivar policies `auth.uid()` + login (el código está en el historial git, commit `37961c4`).
 
 ## Telemetría UX
 

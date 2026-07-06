@@ -27,25 +27,23 @@ App PWA de entrenamiento personal para preparación de trekking nivel 4, adaptad
 
 ## Sync automático con Supabase (multi-dispositivo)
 
-Backup automático + sync multi-dispositivo de toda tu data (perfil, plan, historial, sesiones) en **Supabase** (Postgres + Auth + Realtime). Sincroniza ~4s después de cada cambio. Requiere login (1 vez por dispositivo).
+Backup automático + sync multi-dispositivo de toda tu data (perfil, plan, historial, sesiones, telemetría) en **Supabase** (Postgres + Realtime). Sincroniza ~4s después de cada cambio. **Sin login** — la app arranca directo.
 
 ### Setup (una sola vez, en el dashboard de Supabase)
 
-1. **SQL Editor** → pega `docs/supabase-setup.sql` → *Run* (crea las 5 tablas `gym_*` + RLS + realtime).
-2. **Authentication → Users → Add user** → tu email + contraseña. (Opcional: Authentication → Providers → Email → *Disable signups* para endurecer.)
-3. **Settings → API** → copia la `anon public` key → ponla en `SUPABASE_ANON_KEY` (constante en `index.html`).
+1. **SQL Editor** → pega `docs/supabase-setup.sql` → *Run* (crea las 6 tablas `gym_*` + RLS abierta + realtime).
+2. **Settings → API** → copia la `anon public` key → ponla en `SUPABASE_ANON_KEY` (constante en `index.html`), y fija tu `_gymUid`.
 
 ### Usar
 
-- Abre la app → pantalla de login → entra con tu email + contraseña. La data se sincroniza sola.
-- **Otro dispositivo**: abre la app, inicia sesión con la misma cuenta → tu data aparece (hidratada de la nube, realtime).
-- Config → **☁️ Sincronización**: estado de cuenta, "Sincronizar ahora", "Cerrar sesión".
+- Abre la app. La data se sincroniza sola (debounce 4s tras cada cambio).
+- **Otro dispositivo**: abre la app → tu data aparece (hidratada de la nube, realtime).
+- Config → **☁️ Sincronización**: "Sincronizar ahora" + status.
 
 ### Notas de seguridad
 
-- La **publishable key** (`sb_publishable_...`) va hardcodeada en `index.html` (repo público). Es publicable por diseño; las tablas `gym_*` están protegidas por **RLS `auth.uid()`** → nadie accede a tu data sin login.
-- Proyecto **compartido con la app de viajes** (restricción free tier). La key compartida queda en el repo público → las tablas abiertas del viaje un poco más expuestas (riesgo bajo, ver spec §9).
-- La **telemetría NO se sincroniza** (vive solo en localStorage; puede pesar 100KB+).
+- **Sin login + key pública** (repo público) ⇒ cualquiera que encuentre la key puede leer/escribir los datos de entrenamiento. Riesgo asumido (datos de gimnasio, sensibilidad baja) — mismo modelo "privacidad por oscuridad" que la app de viajes con la que se comparte el proyecto.
+- La **telemetría** se sube como backup (`gym_telemetry`) pero nunca se descarga — el buffer local de cada dispositivo manda.
 
 ## Instalar en iPhone
 

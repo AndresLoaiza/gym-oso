@@ -9,9 +9,8 @@ PWA single-file HTML+JS. Plan 8 semanas PFPS-safe. Doble progresión. Telemetrí
 
 ### 🔴 Alta prioridad
 
-#### 1. Sincronización de backup (Supabase o endpoint propio)
-**Problema:** localStorage se puede perder con cualquier reset del iPhone, actualización del navegador, o cambio de dispositivo. Todo el historial de sesiones desaparece.  
-**Solución A (mínima):** botón "Backup manual" en Config que manda el JSON completo a un Google Drive compartido vía la API de Files.
+#### ~~1. Sincronización de backup (GitHub Gist)~~ ✅ HECHO (2026-06-03)
+GitHub Gist fire-and-forget implementado en `saveDB()`. Toggle en Config. `restoreFromGist()` para dispositivo nuevo. Telemetría excluida del sync.
 
 **Solución B (automática):** Supabase tier gratis. En `saveDB()`, agregar sync opcional.
 
