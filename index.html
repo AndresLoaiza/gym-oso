@@ -1191,19 +1191,21 @@ function analyzeWeightPattern(setsDone, targetReps){
    6. sin sets done → 0
    7. allComplete + bien → double progression (+rep o +peso+reset)
    8. 1 shortfall → 0 (margen día malo) */
-function decideBump(ex, knee, targetReps, pattern, planEx){
-  const z = { weightBump:0, repBump:0, reason:'' };
+function decideBump(ex, knee, targetReps, pattern, planEx, opts){
+  const z = { weightBump:0, repBump:0, reason:'', ruleId:null };
   if(ex.isCardio || ex.noWeight) return { ...z, reason:'cardio/iso' };
-  if(knee === 'leve') return { ...z, reason:'rodilla leve: no progresa' };
+  if(knee === 'leve') return { ...z, reason:'rodilla leve: no progresa', ruleId:'knee_leve' };
   if(typeof targetReps !== 'number') return { ...z, reason:'time-based' };
   const cap = PROG_CAPS[ex.id] || {};
-  const step = cap.isolation ? 1.25 : 2.5;
+  // opts.step: incremento adaptado al perfil de respuesta (C1). Default = estándar.
+  const step = (opts && opts.step) || (cap.isolation ? 1.25 : 2.5);
+  const micro = !!(opts && opts.micro);
   const done = ex.sets.filter(s => s.done);
   if(done.length === 0) return { ...z, reason:'sin series done' };
-  if(knee === 'dolor' && cap.quadHeavy) return { weightBump:-step, repBump:0, reason:'dolor: -peso cuádriceps' };
-  if(pattern.dropDetected) return { ...z, reason:'drop ≥10%: techo fatiga' };
+  if(knee === 'dolor' && cap.quadHeavy) return { weightBump:-step, repBump:0, reason:'dolor: -peso cuádriceps', ruleId:'knee_dolor' };
+  if(pattern.dropDetected) return { ...z, reason:'drop ≥10%: techo fatiga', ruleId:'drop_fatiga' };
   const shortfalls = done.filter(s => (+s.reps || 0) < targetReps).length;
-  if(shortfalls >= 2) return { weightBump:-step, repBump:0, reason:`${shortfalls} series < ${targetReps} reps` };
+  if(shortfalls >= 2) return { weightBump:-step, repBump:0, reason:`${shortfalls} series < ${targetReps} reps`, ruleId:'shortfalls' };
   const allComplete = done.length === ex.sets.length && shortfalls === 0;
   if(allComplete && knee === 'bien'){
     const repMax = planEx?.repMax;
@@ -1211,16 +1213,19 @@ function decideBump(ex, knee, targetReps, pattern, planEx){
     if(typeof repMax === 'number' && typeof repMin === 'number'){
       // DOUBLE PROGRESSION
       if(targetReps < repMax){
-        return { weightBump:0, repBump:+1, reason:`+1 rep → ${targetReps+1}/${repMax} (double prog)` };
+        return { weightBump:0, repBump:+1, reason:`+1 rep → ${targetReps+1}/${repMax} (double prog)`, ruleId:'double_prog_rep' };
       }
       // ya en repMax → +peso + reset reps a repMin
-      return { weightBump:+step, repBump: (repMin - targetReps), reason:`repMax ${repMax} ✓: +${step}kg + reset ${repMin} reps` };
+      return { weightBump:+step, repBump: (repMin - targetReps),
+        reason:`repMax ${repMax} ✓: +${step}kg + reset ${repMin} reps${micro ? ' (micro-progresión)' : ''}`,
+        ruleId: micro ? 'resp_lento' : 'double_prog_weight' };
     }
     // Sin window: fallback simple
     const variant = pattern.kind === 'ascending' ? ' (warm-up integrado)' : '';
-    return { weightBump:+step, repBump:0, reason:`completo RIR 2+${variant}` };
+    return { weightBump:+step, repBump:0, reason:`completo RIR 2+${variant}${micro ? ' (micro-progresión)' : ''}`,
+      ruleId: micro ? 'resp_lento' : 'double_prog_weight' };
   }
-  if(shortfalls === 1) return { ...z, reason:'1 short: margen día malo' };
+  if(shortfalls === 1) return { ...z, reason:'1 short: margen día malo', ruleId:'margen_dia_malo' };
   return { ...z, reason:'parcial' };
 }
 
@@ -1246,7 +1251,10 @@ function applyProgression(session){
     const targetReps = planEx && typeof planEx.reps === 'number' ? planEx.reps : null;
     const done = ex.sets.filter(s => s.done);
     const pattern = analyzeWeightPattern(done, targetReps);
-    const { weightBump, repBump, reason } = decideBump(ex, knee, targetReps, pattern, planEx);
+    // C1: incremento adaptado al perfil de respuesta real de este ejercicio
+    const stepInfo = adaptiveStep(ex.id, DB.sessions || []);
+    const { weightBump, repBump, reason, ruleId } = decideBump(ex, knee, targetReps, pattern, planEx,
+      { step: stepInfo.step, micro: stepInfo.ruleId === 'resp_lento' });
     const cap = PROG_CAPS[ex.id] || {};
     const planPhase = planEx?.phase;
     const planWeight = planEx ? (+planEx.weight || 0) : 0;
@@ -1272,6 +1280,7 @@ function applyProgression(session){
 
     let appliedW = false, beforeW = null, afterW = null;
     let appliedR = false, beforeR = targetReps, afterR = targetReps;
+    let cappedFlag = false;
 
     // Weight: futuras same-phase. Sincroniza proven + aplica bump.
     for(let wi = w + 1; wi < DB.plan.weeks.length; wi++){
@@ -1280,7 +1289,9 @@ function applyProgression(session){
       if(planPhase && target.phase && target.phase !== planPhase) continue;
       const oldW = +target.weight || 0;
       const refW = Math.max(syncBase, oldW);
-      const newW = Math.max(2.5, Math.min(cap.max ?? Infinity, refW + weightBump));
+      const uncapped = refW + weightBump;
+      const newW = Math.max(2.5, Math.min(cap.max ?? Infinity, uncapped));
+      if(uncapped > (cap.max ?? Infinity)) cappedFlag = true;
       if(newW === oldW) continue;
       target.weight = newW;
       if(!appliedW){ beforeW = oldW; afterW = newW; appliedW = true; }
@@ -1316,13 +1327,15 @@ function applyProgression(session){
 
     if(appliedW || appliedR){
       // Sync puro de peso (sin decisión de bump): aclarar razón en el modal.
-      const reasonOut = (weightBump === 0 && repBump === 0 && appliedW)
-        ? `sync peso usado (${afterW}kg)` : reason;
+      const pureSync = (weightBump === 0 && repBump === 0 && appliedW);
+      const reasonOut = pureSync ? `sync peso usado (${afterW}kg)` : reason;
       changes.push({
         id:ex.id, name:ex.name,
         fromW: appliedW ? beforeW : planWeight, toW: appliedW ? afterW : planWeight,
         fromR: beforeR, toR: afterR,
-        weightBump, repBump, reason: reasonOut
+        weightBump, repBump, reason: reasonOut,
+        ruleId: pureSync ? 'sync_peso' : ruleId,
+        capped: cappedFlag
       });
     }
   }
@@ -1333,6 +1346,316 @@ function applyProgression(session){
 function undoProgression(snapshot){
   DB.plan = JSON.parse(snapshot);
   saveDB();
+}
+
+/* ============= FRENTE C: COACH ADAPTATIVO =============
+   Lógica pura (testeada) que aprende del historial de Andrés sin IA en runtime:
+   - C1 progressionVelocity/adaptiveStep: velocidad real de progresión por ejercicio
+     → incremento adaptado (micro-progresión donde se estanca).
+   - C2 kneeLoadCorrelation: qué ejercicios preceden reportes de molestia/dolor
+     (pre check-in siguiente + postKnee 24h) → el generador baja ese estímulo.
+   - C3 carryoverWeights/phaseCompliance: el ciclo nuevo arranca donde el anterior
+     terminó de verdad; fases cumplidas >90% avanzan, con shortfalls repiten.
+   - C4 COACH_RULES: cada decisión automática explica su regla + evidencia. */
+
+/* C4 — Reglas del coach: regla aplicada + evidencia. Toda decisión automática
+   referencia un ruleId de aquí (modal "¿por qué?"). Fuentes = las del proyecto. */
+const COACH_RULES = {
+  double_prog_rep: { name:'Double progression: +1 rep',
+    rule:'Completaste todas las series con las reps objetivo y la rodilla bien. Antes de subir peso, se suben reps hasta el tope de la ventana (repMax). Subir reps primero permite progresar sin aumentar el estrés pico en la rótula.',
+    evidence:'Helms (RP Pyramid) — double progression · Schoenfeld 2017 — ventanas de reps equivalentes volumen-igualado' },
+  double_prog_weight: { name:'Double progression: +peso + reset de reps',
+    rule:'Llegaste al tope de reps de la ventana (repMax) con todas las series completas. Se sube el peso un incremento y las reps vuelven al piso de la ventana (repMin) para empezar un nuevo ciclo de acumulación.',
+    evidence:'Helms (RP Pyramid) — double progression · ACSM 2026 — sobrecarga progresiva' },
+  drop_fatiga: { name:'Techo de fatiga: mantener',
+    rule:'Bajaste el peso ≥10% dentro de la misma sesión. Eso indica que llegaste al techo de fatiga del día — progresar sobre una sesión así acumula fatiga sin ganancia. Se mantiene la carga.',
+    evidence:'González-Badillo — velocity loss / interpretación de caída intra-sesión' },
+  knee_leve: { name:'Molestia leve: no progresar',
+    rule:'Reportaste molestia leve en la rodilla. Con síntomas activos no se progresa carga — el objetivo es consolidar sin irritar la articulación patelofemoral.',
+    evidence:'Crossley/Collins 2016 (consenso PFPS) — el dolor guía la dosis' },
+  knee_dolor: { name:'Dolor: reducir carga en cuádriceps',
+    rule:'Reportaste dolor >3/10. En ejercicios que cargan la rótula (prensa, jack squat) se reduce el peso un incremento. El estrés patelofemoral depende de la carga bajo flexión de rodilla.',
+    evidence:'Powers 2010 — PFJ stress ∝ carga × flexión · Crossley/Collins 2016' },
+  shortfalls: { name:'2+ series cortas: bajar peso',
+    rule:'Fallaste las reps objetivo en 2 o más series. El peso está por encima de tu capacidad actual para esa ventana — se baja un incremento para volver a la zona de calidad técnica (RIR 2-3).',
+    evidence:'Helms — autorregulación por rendimiento · NSCA' },
+  margen_dia_malo: { name:'1 serie corta: margen',
+    rule:'Fallaste reps solo en 1 serie. Puede ser un mal día (sueño, estrés) — se mantiene la carga y se re-evalúa la próxima sesión antes de decidir.',
+    evidence:'Helms — autorregulación (una observación no es tendencia)' },
+  sync_peso: { name:'Sincronización con tu peso real',
+    rule:'Usaste un peso mayor al del plan y cumpliste las reps objetivo sin caída de fatiga. El plan se sincroniza a lo que realmente levantas — el peso probado es mejor evidencia que el peso derivado del baseline.',
+    evidence:'Helms — top-set assessment · corrige baselines subestimados' },
+  cap_pfps: { name:'Tope de seguridad PFPS',
+    rule:'Este ejercicio tiene tope de peso porque carga directamente la rótula (o por seguridad de la máquina). La progresión continúa por reps, no por peso. Solo Andrés decide subir un cap.',
+    evidence:'Powers 2010 — PFJ stress depende de flexión de rodilla bajo carga' },
+  resp_lento: { name:'Micro-progresión (respuesta lenta)',
+    rule:'En este ejercicio tu progresión real de las últimas sesiones está estancada (sin ganancia de peso ni reps). Se usa medio incremento en vez del completo — subidas más pequeñas y sostenibles rompen mesetas mejor que insistir con el salto estándar.',
+    evidence:'Helms (RP) — micro-loading para intermedios/mesetas' },
+  knee_pattern: { name:'Patrón rodilla ↔ ejercicio',
+    rule:'Tras las últimas veces que hiciste este ejercicio reportaste molestia o dolor (en el check-in siguiente o a las 24h) con más frecuencia que tu promedio. El generador reduce su carga 10% en el nuevo plan. Si el patrón desaparece, la reducción no se repite.',
+    evidence:'Holden 2018 / Crossley 2016 — síntomas 24h post-carga como guía de dosis PFPS' },
+  cycle_avanza: { name:'Ciclo nuevo: fase avanzada',
+    rule:'En el ciclo anterior cumpliste ≥90% de los objetivos de esta fase. El ciclo nuevo arranca desde tus pesos finales reales + un incremento — no desde el baseline teórico.',
+    evidence:'ACSM 2026 — sobrecarga progresiva · Helms — carryover entre ciclos' },
+  cycle_mantiene: { name:'Ciclo nuevo: fase repetida',
+    rule:'En el ciclo anterior esta fase tuvo shortfalls (menos del 90% de objetivos cumplidos). El ciclo nuevo repite la fase desde tus pesos finales reales, sin avanzar, para consolidar antes de subir.',
+    evidence:'Helms — consolidar antes de progresar · evita acumular deuda técnica' },
+  deload: { name:'Semana de descarga',
+    rule:'Señales de fatiga acumulada (2+ sesiones con caída intra-sesión ≥10%) o de irritación de rodilla (2+ reportes de molestia/dolor en 7 días). Una semana con -40% de series y misma técnica/intensidad disipa la fatiga sin perder adaptaciones.',
+    evidence:'ACSM 2026 — deload baja volumen, mantiene intensidad · González-Badillo — gestión de fatiga' },
+};
+function openCoachWhy(ruleId){
+  const r = COACH_RULES[ruleId];
+  if(!r) return;
+  track('coach_why_open', { ruleId });
+  openModal(`<h2 style="font-size:17px;">🎓 ${r.name}</h2>
+    <div style="font-size:14px;line-height:1.55;margin-top:8px;">${r.rule}</div>
+    <div class="small" style="color:var(--muted);margin-top:10px;">📚 <b>Evidencia:</b> ${r.evidence}</div>
+    <button class="btn primary" style="margin-top:14px;width:100%;" onclick="closeModal()">Entendido</button>`);
+}
+window.openCoachWhy = openCoachWhy;
+
+/* C1 — Historial por ejercicio: top-set (peso máx entre series done) por sesión. */
+function exerciseHistory(sessions, exId){
+  const out = [];
+  for(const s of sessions || []){
+    const ex = (s.exercises || []).find(e => e.id === exId);
+    if(!ex || ex.isCardio || ex.noWeight) continue;
+    const done = (ex.sets || []).filter(x => x.done && typeof x.reps !== 'string');
+    if(!done.length) continue;
+    let top = done[0];
+    for(const st of done) if((+st.weight || 0) > (+top.weight || 0)) top = st;
+    out.push({ date: s.date, topW: +top.weight || 0, topReps: +top.reps || 0 });
+  }
+  return out;
+}
+/* C1 — Velocidad real de progresión (kg y reps por sesión, últimas ≤6 sesiones).
+   class: 'sin_datos' (<4 sesiones) | 'estancado' | 'normal' | 'rapido'. */
+function progressionVelocity(sessions, exId){
+  const h = exerciseHistory(sessions, exId);
+  if(h.length < 4) return { n: h.length, kgPerSession: null, repsPerSession: null, class: 'sin_datos' };
+  const pts = h.slice(-6);
+  const span = pts.length - 1;
+  const kgPerSession = (pts[pts.length-1].topW - pts[0].topW) / span;
+  const repsPerSession = (pts[pts.length-1].topReps - pts[0].topReps) / span;
+  let cls = 'normal';
+  if(kgPerSession <= 0 && repsPerSession <= 0.25) cls = 'estancado';
+  else if(kgPerSession >= 1.5) cls = 'rapido';
+  return { n: h.length, kgPerSession, repsPerSession, class: cls };
+}
+/* C1 — Incremento adaptado al perfil de respuesta: estancado → medio paso
+   (micro-progresión, piso 1.25 = disco más pequeño del gym). */
+function adaptiveStep(exId, sessions){
+  const cap = PROG_CAPS[exId] || {};
+  const base = cap.isolation ? 1.25 : 2.5;
+  const v = progressionVelocity(sessions, exId);
+  if(v.class === 'estancado') return { step: Math.max(1.25, base / 2), ruleId: 'resp_lento', velocity: v };
+  return { step: base, ruleId: null, velocity: v };
+}
+
+/* C2 — Correlación rodilla ↔ carga: ejercicios cuya ejecución precede reportes
+   de molestia/dolor (postKnee 24h de esa sesión, o pre check-in de la siguiente)
+   con más frecuencia que la tasa base. Flag requiere ≥3 ejecuciones, ratio ≥0.6
+   y ≥15 pts sobre la tasa base (si TODAS las sesiones duelen, eso es señal de
+   deload global, no de un ejercicio — el guard evita flaggear todo). */
+function kneeLoadCorrelation(sessions){
+  const ss = sessions || [];
+  const stats = {};
+  let badSessions = 0, totalSessions = 0;
+  ss.forEach((s, i) => {
+    const next = ss[i+1];
+    const bad = ['leve','dolor'].includes(s.postKnee)
+      || (next && ['leve','dolor'].includes(next.kneeStatus));
+    let counted = false;
+    for(const ex of s.exercises || []){
+      if(ex.isCardio || ex.noWeight) continue;
+      if(!(ex.sets || []).some(x => x.done)) continue;
+      stats[ex.id] = stats[ex.id] || { bad: 0, total: 0, name: ex.name };
+      stats[ex.id].total++;
+      if(bad) stats[ex.id].bad++;
+      counted = true;
+    }
+    if(counted){ totalSessions++; if(bad) badSessions++; }
+  });
+  const baseRate = totalSessions ? badSessions / totalSessions : 0;
+  return Object.entries(stats)
+    .map(([id, x]) => ({ id, name: x.name, bad: x.bad, total: x.total, ratio: x.bad / x.total }))
+    .filter(x => x.total >= 3 && x.ratio >= 0.6 && x.ratio >= baseRate + 0.15)
+    .sort((a, b) => b.ratio - a.ratio);
+}
+
+/* C3 — Pesos finales reales del ciclo anterior por (día, ejercicio, fase).
+   La última semana de cada fase pisa a las anteriores (trae la progresión aplicada). */
+function carryoverWeights(plan){
+  const map = {};
+  (plan?.weeks || []).forEach((wk, wi) => {
+    const ph = phaseOfWeek(wi);
+    (wk || []).forEach((day, di) => {
+      for(const ex of day?.exercises || []){
+        if(ex.isCardio || ex.noWeight) continue;
+        map[`${di}|${ex.id}|${ph}`] = +ex.weight || 0;
+      }
+    });
+  });
+  return map;
+}
+/* C3 — Cumplimiento por fase del ciclo anterior: % de sesiones donde ≥90% de las
+   series se completaron cumpliendo las reps target del plan. */
+function phaseCompliance(sessions, plan){
+  const acc = {};
+  for(const s of sessions || []){
+    if(!s.planRef) continue;
+    const ph = phaseOfWeek(s.planRef.w);
+    const day = plan?.weeks?.[s.planRef.w]?.[s.planRef.d];
+    let ok = 0, total = 0;
+    for(const ex of s.exercises || []){
+      if(ex.isCardio || ex.noWeight) continue;
+      const planEx = day?.exercises?.find(e => e.id === ex.id);
+      const target = planEx && typeof planEx.reps === 'number' ? planEx.reps : null;
+      for(const st of ex.sets || []){
+        total++;
+        if(st.done && (target == null || (+st.reps || 0) >= target)) ok++;
+      }
+    }
+    if(!total) continue;
+    acc[ph] = acc[ph] || { ok: 0, total: 0 };
+    acc[ph].total++;
+    if(ok / total >= 0.9) acc[ph].ok++;
+  }
+  const out = {};
+  for(const ph of ['adapt','str','end','taper']){
+    const a = acc[ph];
+    out[ph] = a ? { rate: a.ok / a.total, sessions: a.total } : { rate: null, sessions: 0 };
+  }
+  return out;
+}
+
+/* ============= FRENTE B: RESUMEN, POST-24H, DELOAD ============= */
+
+/* B1 — Volumen total de la sesión (Σ reps×peso de series done, solo numéricas). */
+function sessionVolume(exercises){
+  let v = 0;
+  for(const ex of exercises || []){
+    if(ex.isCardio || ex.noWeight) continue;
+    for(const st of ex.sets || []){
+      if(st.done && typeof st.reps !== 'string') v += (+st.reps || 0) * (+st.weight || 0);
+    }
+  }
+  return Math.round(v);
+}
+/* B1 — PRs de la sesión vs historial: peso récord, o reps récord al peso récord. */
+function sessionPRs(session, prevSessions){
+  const bestPrev = {};
+  for(const s of prevSessions || []){
+    for(const ex of s.exercises || []){
+      for(const st of ex.sets || []){
+        if(!st.done || typeof st.reps === 'string') continue;
+        const w = +st.weight || 0, r = +st.reps || 0;
+        const b = bestPrev[ex.id];
+        if(!b || w > b.w || (w === b.w && r > b.reps)) bestPrev[ex.id] = { w, reps: r };
+      }
+    }
+  }
+  const prs = [];
+  for(const ex of session.exercises || []){
+    if(ex.isCardio || ex.noWeight) continue;
+    let top = null;
+    for(const st of ex.sets || []){
+      if(!st.done || typeof st.reps === 'string') continue;
+      const w = +st.weight || 0, r = +st.reps || 0;
+      if(!top || w > top.w || (w === top.w && r > top.reps)) top = { w, reps: r };
+    }
+    if(!top || !top.w) continue;
+    const b = bestPrev[ex.id];
+    if(!b) continue;  // primera vez: no hay récord previo que superar
+    if(top.w > b.w) prs.push({ id: ex.id, name: ex.name, type: 'peso', prev: b.w, now: top.w });
+    else if(top.w === b.w && top.reps > b.reps) prs.push({ id: ex.id, name: ex.name, type: 'reps', weight: top.w, prev: b.reps, now: top.reps });
+  }
+  return prs;
+}
+/* B1 — Duración estimada de la sesión: cardio = su tiempo · hold = n×(hold+rest)
+   · fuerza = n×(~40s trabajo + rest) · +2:30 por cambio de ejercicio. */
+function estimateSessionSec(exercises){
+  const list = Object.values(exercises || {});
+  let t = 0;
+  for(const ex of list){
+    const n = Array.isArray(ex.sets) ? ex.sets.length : (+ex.sets || 1);
+    const reps0 = Array.isArray(ex.sets) ? ex.sets[0]?.reps : ex.reps;
+    if(ex.isCardio){ t += parseHoldSec(reps0); continue; }
+    const hold = ex.noWeight ? parseHoldSec(reps0) : 0;
+    const work = hold > 0 ? hold : 40;
+    t += n * (work + (ex.rest ?? 90));
+  }
+  if(list.length > 1) t += 150 * (list.length - 1);
+  return t;
+}
+
+/* B4 — ¿La sesión tuvo caída de fatiga (drop ≥10%) en algún ejercicio de fuerza? */
+function sessionHasFatigueDrop(s){
+  for(const ex of s?.exercises || []){
+    if(ex.isCardio || ex.noWeight) continue;
+    const done = (ex.sets || []).filter(x => x.done);
+    if(done.length < 2) continue;
+    if(analyzeWeightPattern(done).dropDetected) return true;
+  }
+  return false;
+}
+/* B4 — Detección de deload: 2 sesiones seguidas con drop de fatiga, o 2+ reportes
+   de rodilla leve/dolor (pre o post-24h) en los últimos 7 días. Propone, no impone. */
+function needsDeload(sessions, nowISO){
+  const ss = sessions || [];
+  if(ss.length < 2) return { needed: false };
+  if(sessionHasFatigueDrop(ss[ss.length-1]) && sessionHasFatigueDrop(ss[ss.length-2])){
+    return { needed: true, ruleId: 'deload', reason: 'fatiga',
+      detail: '2 sesiones seguidas con caída de peso ≥10% intra-sesión (techo de fatiga).' };
+  }
+  const now = new Date(nowISO || ss[ss.length-1].date);
+  const bad = ss.filter(s => (now - new Date(s.date)) <= 7 * 86400000
+    && (['leve','dolor'].includes(s.kneeStatus) || ['leve','dolor'].includes(s.postKnee))).length;
+  if(bad >= 2){
+    return { needed: true, ruleId: 'deload', reason: 'rodilla',
+      detail: `${bad} reportes de molestia/dolor de rodilla en los últimos 7 días.` };
+  }
+  return { needed: false };
+}
+/* B4 — Aplica descarga a una semana: -40% series (mín 1), misma técnica e
+   intensidad. No toca cardio ni días ya completados (doneDays = Set de dayIdx). */
+function applyDeloadToWeek(plan, weekIdx, doneDays){
+  const wk = plan?.weeks?.[weekIdx];
+  if(!wk) return false;
+  let touched = false;
+  wk.forEach((day, di) => {
+    if(doneDays && doneDays.has(di)) return;
+    if(!day || day.deload) return;
+    day.deload = true;
+    day.focus = (day.focus || '') + ' · DESCARGA';
+    day.exercises = (day.exercises || []).map(e =>
+      e.isCardio ? e : ({ ...e, sets: Math.max(1, Math.round((+e.sets || 1) * 0.6)) }));
+    touched = true;
+  });
+  return touched;
+}
+
+/* B2 — ¿Hay sesión pendiente de reporte de rodilla post-24h? Ventana 12-96h,
+   solo la última sesión, una sola vez (postKnee o postKneeSkipped la cierran). */
+function pendingPostKnee(sessions, nowISO){
+  const ss = sessions || [];
+  if(!ss.length) return -1;
+  const i = ss.length - 1;
+  const s = ss[i];
+  if(s.postKnee || s.postKneeSkipped) return -1;
+  const h = (new Date(nowISO) - new Date(s.date)) / 3600000;
+  return (h >= 12 && h <= 96) ? i : -1;
+}
+
+/* B3 — Última nota del usuario para un ejercicio (se muestra la próxima vez). */
+function lastNoteFor(sessions, exId){
+  const ss = sessions || [];
+  for(let i = ss.length - 1; i >= 0; i--){
+    const ex = (ss[i].exercises || []).find(e => e.id === exId);
+    if(ex && ex.userNote && ex.userNote.trim()) return { text: ex.userNote.trim(), date: ss[i].date };
+  }
+  return null;
 }
 
 function todayISO(){ return new Date().toISOString().slice(0,10); }
@@ -1508,7 +1831,12 @@ $('#ob-back').addEventListener('click', () => {
    - Isométrico (wall sit): hold 20-45s, 3-5 sets, rest = work
    - Leg extension arco corto (últimos 30°): carga baja, 12-15 reps
    Fases: 0-1 adaptación · 2-4 fuerza/hipertrofia · 5-6 resistencia trekking · 7 taper */
-function generateLocalPlan(){
+/* opts (C2/C3, regeneración de ciclo): { prevPlan, sessions }
+   - prevPlan: plan del ciclo anterior → carryover de pesos finales reales por
+     (día, ejercicio, fase) + avance de fase si cumplió ≥90% (phaseCompliance).
+   - sessions: historial → correlación rodilla↔ejercicio (kneeLoadCorrelation)
+     reduce 10% la carga de ejercicios que preceden molestia, y lo explica. */
+function generateLocalPlan(opts){
   // 1RMs base (con fallback)
   const rmLeg   = DB.profile?.baseline?.legPress1RM   || 60;
   const rmBench = DB.profile?.baseline?.benchPress1RM || 30;
@@ -1636,6 +1964,56 @@ function generateLocalPlan(){
   }
   DB.plan = { start: todayISO(), weeks, generatedBy: 'local', objective: OBJECTIVE.id };
   tagPlanWithWindows();
+
+  // ===== C3: carryover del ciclo anterior + periodización reactiva =====
+  if(opts?.prevPlan?.weeks){
+    const carry = carryoverWeights(opts.prevPlan);
+    const comp = phaseCompliance(opts.sessions || [], opts.prevPlan);
+    const cycleNotes = [];
+    const advanced = new Set();
+    for(let wi = 0; wi < weeks.length; wi++){
+      const ph = phaseOfWeek(wi);
+      const c = comp[ph];
+      const advance = !!(c && c.sessions >= 1 && c.rate >= 0.9);
+      for(let di = 0; di < weeks[wi].length; di++){
+        for(const ex of weeks[wi][di].exercises || []){
+          if(ex.isCardio || ex.noWeight) continue;
+          const carried = carry[`${di}|${ex.id}|${ph}`];
+          if(carried === undefined) continue;
+          const cap = PROG_CAPS[ex.id] || {};
+          const stepE = cap.isolation ? 1.25 : 2.5;
+          let base = Math.max(+ex.weight || 0, carried);
+          if(advance) base += stepE;
+          ex.weight = Math.max(2.5, Math.min(cap.max ?? Infinity, base));
+        }
+      }
+      if(c && c.sessions >= 1 && !advanced.has(ph)){
+        advanced.add(ph);
+        cycleNotes.push({ phase: ph, rate: Math.round(c.rate * 100) / 100, sessions: c.sessions,
+          action: advance ? 'avanza' : 'mantiene',
+          ruleId: advance ? 'cycle_avanza' : 'cycle_mantiene' });
+      }
+    }
+    if(cycleNotes.length) DB.plan.cycleNotes = cycleNotes;
+  }
+
+  // ===== C2: correlación rodilla ↔ carga — reduce estímulo flaggeado y lo dice =====
+  const kneeFlags = kneeLoadCorrelation(opts?.sessions || DB.sessions || []);
+  if(kneeFlags.length){
+    const flagged = new Set(kneeFlags.map(f => f.id));
+    for(const wk of weeks){
+      for(const day of wk){
+        for(const ex of day.exercises || []){
+          if(!flagged.has(ex.id) || ex.isCardio || ex.noWeight) continue;
+          const f = kneeFlags.find(x => x.id === ex.id);
+          ex.weight = Math.max(2.5, Math.round(((+ex.weight || 0) * 0.9) / 2.5) * 2.5);
+          ex.note = `🦵 Coach: reduje 10% la carga — tras ${f.bad} de tus últimas ${f.total} veces con este ejercicio reportaste molestia/dolor. ${ex.note || ''}`.trim();
+        }
+      }
+    }
+    DB.plan.kneeAdjust = kneeFlags.map(f => ({ id: f.id, name: f.name, bad: f.bad, total: f.total }));
+  }
+
   saveDB();
 }
 
@@ -1719,10 +2097,11 @@ function nextSession(){
       if(!done.has(`${w}-${d}`)) return { weekIdx: w, dayIdx: d, session: DB.plan.weeks[w][d] };
     }
   }
-  // Plan completo → auto-regenerar nuevo ciclo basado en baseline + ciencia
+  // Plan completo → auto-regenerar nuevo ciclo. C3: arranca de donde el ciclo
+  // anterior terminó de verdad (carryover + compliance), no del baseline teórico.
   if(DB.profile?.baseline){
     DB.sessionSets = {}; DB._currentRef = null; DB._kneeStatus = null; DB._adaptedSession = null;
-    generateLocalPlan();
+    generateLocalPlan({ prevPlan: DB.plan, sessions: DB.sessions });
     return { weekIdx: 0, dayIdx: 0, session: DB.plan.weeks[0][0] };
   }
   return null;
@@ -1738,11 +2117,18 @@ function renderPlan(){
   const sessionsDone = (DB.sessions || []).filter(s => s.planRef).length;
   const total = DB.plan.weeks.reduce((a,wk) => a + wk.length, 0);
   const phLabel = { adapt:'Adaptación', str:'Fuerza', end:'Endurance', taper:'Taper' }[phaseOfWeek(ns ? ns.weekIdx : 7)] || '—';
+  // C2/C3: notas del coach sobre el plan actual (regenerado con historial)
+  const phName = { adapt:'Adaptación', str:'Fuerza', end:'Endurance', taper:'Taper' };
+  const coachCycle = (DB.plan.cycleNotes || []).map(n =>
+    `<div class="small" style="margin-top:4px;">🎓 <b>${phName[n.phase] || n.phase}</b>: ${n.action === 'avanza' ? 'cumpliste ≥90% el ciclo pasado → arrancas con +incremento' : 'hubo shortfalls el ciclo pasado → repites desde tus pesos reales'} <button class="btn small" style="padding:1px 8px;min-height:22px;font-size:10px;" onclick="openCoachWhy('${n.ruleId}')">¿por qué?</button></div>`).join('');
+  const coachKnee = (DB.plan.kneeAdjust || []).map(k =>
+    `<div class="small" style="margin-top:4px;color:var(--warn);">🦵 <b>${escHtml(k.name || k.id)}</b>: carga -10% — ${k.bad}/${k.total} veces seguidas de molestia <button class="btn small" style="padding:1px 8px;min-height:22px;font-size:10px;" onclick="openCoachWhy('knee_pattern')">¿por qué?</button></div>`).join('');
+  const coachBlock = (coachCycle || coachKnee) ? `<div style="margin-top:8px;border-top:1px dashed var(--border);padding-top:6px;">${coachCycle}${coachKnee}</div>` : '';
   const summary = ns
     ? `<h3>Próximo: Sem ${ns.weekIdx+1} · Día ${ns.dayIdx+1}</h3>
        <div style="display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 2px;"><span class="chip" style="background:var(--accent-soft);color:var(--accent);">Fase: ${phLabel}</span><span class="chip">${sessionsDone}/${total} sesiones</span></div>
-       <div class="small" style="margin-top:6px;">Cada día avanza al finalizar la sesión actual. Independiente del calendario.</div>`
-    : `<h3>🎉 Plan completado</h3><div class="small">${sessionsDone}/${total} sesiones. Próxima sesión iniciará un ciclo nuevo automáticamente (baseline + periodización).</div>`;
+       <div class="small" style="margin-top:6px;">Cada día avanza al finalizar la sesión actual. Independiente del calendario.</div>${coachBlock}`
+    : `<h3>🎉 Plan completado</h3><div class="small">${sessionsDone}/${total} sesiones. Próxima sesión iniciará un ciclo nuevo automáticamente (desde tus pesos finales reales + historial).</div>`;
   $('#plan-summary').innerHTML = summary;
 
   const doneByWeek = {};
@@ -1970,6 +2356,7 @@ function renderRutinaInner(ns, td){
       <div class="collapsible">
       ${howtoBtn ? `<div style="margin:6px 0 4px;">${howtoBtn}</div>` : ''}
       ${ex.note ? `<div class="pfps-warn">${ex.note}</div>` : ''}
+      ${(() => { const ln = lastNoteFor(DB.sessions, ex.id); return ln ? `<div class="small" style="color:var(--accent2);margin:4px 0;">📝 Última vez (${fmtDate(ln.date)}): "${escHtml(ln.text)}"</div>` : ''; })()}
       <div class="set-row set-header${timeOnly?' time-only':''}">${headerCells}</div>
       <div id="sets-${idx}"></div>
       <div class="btn-row ex-actions" style="margin-top:8px;flex-wrap:wrap;gap:6px;">
@@ -2330,32 +2717,52 @@ $('#finish-session').addEventListener('click', () => {
   saveDB();
   releaseWake();
   // Auto-progresión: opcional, on por default
+  let changes = [], planSnapshot = null;
   if(DB.settings?.autoProgress !== false){
-    const planSnapshot = JSON.stringify(DB.plan);
-    const changes = applyProgression(session);
-    if(changes.length){
-      showProgressionModal(changes, planSnapshot);
-      return;
-    }
+    planSnapshot = JSON.stringify(DB.plan);
+    changes = applyProgression(session);
   }
-  showSessionDoneModal();
+  // B1: resumen post-sesión (volumen, PRs, duración vs estimado) + progresión explicada
+  const summary = {
+    volumen: sessionVolume(exercises),
+    prs: sessionPRs(session, DB.sessions.slice(0, -1)),
+    durSec,
+    estSec: estimateSessionSec(exercises),
+    doneSets, totalSets
+  };
+  showSessionSummaryModal(summary, changes, planSnapshot, needsDeload(DB.sessions));
 });
 
-/* Celebración fin de sesión (sin cambios de progresión). El Oso descansa. */
-function showSessionDoneModal(){
-  openModal(`
-    <div style="display:flex;justify-content:center;margin-bottom:8px;">${bearSVG('rest', 120)}</div>
-    <h2 style="text-align:center;">¡Sesión guardada!</h2>
-    <p class="small" style="text-align:center;color:var(--muted);margin-bottom:14px;">Buen trabajo. Descansa bien — la próxima toca seguir progresando.</p>
-    <button class="btn primary" id="done-ok">Listo</button>
-  `);
-  $('#done-ok').addEventListener('click', () => { closeModal(); show('home'); });
+/* Primera (w,d) no completada del plan SIN regenerar (nextSession regenera al
+   terminar ciclo — aquí solo queremos saber dónde caería el deload). */
+function _nextRefNoRegen(){
+  const done = new Set((DB.sessions || []).filter(s => s.planRef).map(s => `${s.planRef.w}-${s.planRef.d}`));
+  for(let w = 0; w < (DB.plan?.weeks || []).length; w++)
+    for(let d = 0; d < DB.plan.weeks[w].length; d++)
+      if(!done.has(`${w}-${d}`)) return { w, d };
+  return null;
 }
 
 let _progSnapshot = null;
-function showProgressionModal(changes, snapshot){
+/* B1 — Resumen post-sesión: volumen, PRs, duración real vs estimada, cambios de
+   auto-progresión con "¿por qué?" (C4) y propuesta de deload (B4) si aplica. */
+function showSessionSummaryModal(summary, changes, snapshot, deload){
   _progSnapshot = snapshot;
-  const rows = changes.map(c => {
+  const fmtMin = s => (s == null) ? '—' : `${Math.round(s / 60)} min`;
+  const statCell = (v, l) => `<div class="stat"><div class="v" style="font-size:18px;">${v}</div><div class="l">${l}</div></div>`;
+  const stats = `<div class="stats-grid" style="margin:10px 0;">
+    ${statCell(summary.volumen ? summary.volumen.toLocaleString('es-CO') + ' kg' : '—', 'Volumen')}
+    ${statCell(`${summary.doneSets}/${summary.totalSets}`, 'Series ✓')}
+    ${statCell(`${fmtMin(summary.durSec)}<div style="font-size:10px;color:var(--muted);font-weight:400;">est. ${fmtMin(summary.estSec)}</div>`, 'Duración')}
+  </div>`;
+  const prRows = (summary.prs || []).map(p => p.type === 'peso'
+    ? `<div style="font-size:13px;padding:4px 0;">🏆 <b>${escHtml(p.name)}</b>: récord de peso ${p.prev}→<b style="color:#7be495;">${p.now}kg</b></div>`
+    : `<div style="font-size:13px;padding:4px 0;">🏆 <b>${escHtml(p.name)}</b>: récord de reps a ${p.weight}kg (${p.prev}→<b style="color:#7be495;">${p.now}</b>)</div>`
+  ).join('');
+  const prBlock = prRows ? `<div style="background:rgba(123,228,149,0.08);border:1px solid rgba(123,228,149,0.4);border-radius:10px;padding:8px 10px;margin-bottom:10px;">${prRows}</div>` : '';
+  const whyBtn = rid => rid && COACH_RULES[rid]
+    ? ` <button class="btn small" style="padding:1px 8px;min-height:22px;font-size:10px;" onclick="openCoachWhy('${rid}')">¿por qué?</button>` : '';
+  const changeRows = (changes || []).map(c => {
     const wChanged = c.fromW !== c.toW;
     const rChanged = c.fromR !== c.toR;
     const isUp = c.weightBump > 0 || c.repBump > 0;
@@ -2363,29 +2770,60 @@ function showProgressionModal(changes, snapshot){
     const color = isUp ? '#7be495' : isDown ? 'var(--warn)' : 'var(--accent)';
     const wPart = wChanged ? `<span style="color:${color};">${c.fromW}→${c.toW}kg</span>` : `<span style="color:var(--muted);">${c.toW}kg</span>`;
     const rPart = rChanged ? `<span style="color:${color};">${c.fromR}→${c.toR} reps</span>` : `<span style="color:var(--muted);">${c.toR} reps</span>`;
+    const capNote = c.capped ? ` <span style="color:var(--warn);">⛔ tope PFPS</span>${whyBtn('cap_pfps')}` : '';
     return `<div style="padding:8px 0;border-bottom:1px solid var(--surface2);font-size:13px;">
       <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;">
-        <span style="font-weight:600;">${c.name}</span>
+        <span style="font-weight:600;">${escHtml(c.name)}</span>
         <span style="font-family:'DM Mono',monospace;font-size:12px;">${wPart} · ${rPart}</span>
       </div>
-      <div style="color:var(--muted);font-size:11px;margin-top:2px;">${c.reason}</div>
+      <div style="color:var(--muted);font-size:11px;margin-top:2px;">${c.reason}${whyBtn(c.ruleId)}${capNote}</div>
     </div>`;
   }).join('');
+  const progBlock = changeRows
+    ? `<div class="small" style="color:var(--accent);font-weight:600;margin-top:4px;">Próxima sesión (auto-progresión):</div><div>${changeRows}</div>`
+    : `<div class="small" style="color:var(--muted);">Sin cambios de progresión para la próxima.</div>`;
+  // B4: propuesta de deload — solo si la semana destino no es ya de descarga
+  const dTarget = deload?.needed ? _nextRefNoRegen() : null;
+  const dWeekOk = dTarget && !(DB.plan?.weeks?.[dTarget.w] || []).some(day => day?.deload);
+  const deloadBlock = (deload?.needed && dWeekOk) ? `
+    <div id="deload-block" style="margin-top:12px;background:rgba(255,107,53,0.10);border:1px solid var(--accent2);border-radius:10px;padding:10px;">
+      <div style="font-size:13px;font-weight:600;color:var(--accent2);">🛟 Propuesta: semana de descarga${whyBtn('deload')}</div>
+      <div class="small" style="margin-top:4px;line-height:1.5;">${escHtml(deload.detail)} Propongo <b>-40% de series</b> en la semana ${dTarget.w + 1} (misma técnica, misma intensidad). Tú decides.</div>
+      <div class="btn-row" style="margin-top:8px;gap:8px;">
+        <button class="btn primary" id="deload-yes" style="flex:1;">Aplicar descarga</button>
+        <button class="btn ghost" id="deload-no">Seguir normal</button>
+      </div>
+    </div>` : '';
   openModal(`
     <div style="display:flex;justify-content:center;margin-bottom:6px;">${bearSVG('rest', 96)}</div>
-    <h2 style="font-size:18px;text-align:center;">¡Sesión completada! Progresión aplicada ✓</h2>
-    <div class="small" style="color:var(--muted);margin-bottom:10px;">
-      Double progression (Helms RP): suma <b>reps primero</b> hasta repMax → luego +peso + reset.
-      Aplica solo a futuras semanas de la misma fase.
-    </div>
-    <div>${rows}</div>
+    <h2 style="font-size:18px;text-align:center;">¡Sesión guardada!</h2>
+    ${stats}
+    ${prBlock}
+    ${progBlock}
+    ${deloadBlock}
     <div class="btn-row" style="margin-top:14px;gap:8px;">
-      <button class="btn primary" id="prog-accept" style="flex:1;">Aceptar</button>
-      <button class="btn" id="prog-undo">↶ Deshacer</button>
+      <button class="btn primary" id="prog-accept" style="flex:1;">Listo</button>
+      ${changes && changes.length ? '<button class="btn" id="prog-undo">↶ Deshacer</button>' : ''}
     </div>
   `);
+  if(deload?.needed && dWeekOk){
+    track('deload_proposed', { reason: deload.reason, week: dTarget.w });
+    $('#deload-yes')?.addEventListener('click', () => {
+      const doneDays = new Set((DB.sessions || []).filter(s => s.planRef && s.planRef.w === dTarget.w).map(s => s.planRef.d));
+      applyDeloadToWeek(DB.plan, dTarget.w, doneDays);
+      track('deload_applied', { reason: deload.reason, week: dTarget.w });
+      saveDB();
+      const blk = $('#deload-block');
+      if(blk) blk.innerHTML = `<div class="small" style="color:#7be495;">✓ Descarga aplicada a la semana ${dTarget.w + 1}: -40% series, misma intensidad.</div>`;
+    });
+    $('#deload-no')?.addEventListener('click', () => {
+      track('deload_declined', { reason: deload.reason, week: dTarget.w });
+      const blk = $('#deload-block');
+      if(blk) blk.style.display = 'none';
+    });
+  }
   $('#prog-accept').addEventListener('click', () => { _progSnapshot = null; closeModal(); show('home'); });
-  $('#prog-undo').addEventListener('click', () => {
+  $('#prog-undo')?.addEventListener('click', () => {
     if(_progSnapshot){ undoProgression(_progSnapshot); _progSnapshot = null; }
     closeModal(); show('home');
   });
@@ -2457,7 +2895,7 @@ function renderHist(){
     const idx = DB.sessions.length - 1 - i;
     return `<div class="card">
       <h3>${fmtDate(s.date)}</h3>
-      <div class="small">${s.exercises.length} ejercicios · ${s.exercises.reduce((a,e)=>a+e.sets.length,0)} series</div>
+      <div class="small">${s.exercises.length} ejercicios · ${s.exercises.reduce((a,e)=>a+e.sets.length,0)} series · 🦵 pre: ${s.kneeStatus || '—'}${s.postKnee ? ` · 24h: ${s.postKnee}` : ''}</div>
       <details><summary>Ver detalle</summary><div>${s.note ? `<div class="pfps-warn" style="margin:4px 0;">📝 ${escHtml(s.note)}</div>` : ''}${s.exercises.map(e => `<div style="padding:4px 0;border-bottom:1px dashed var(--border);"><b>${escHtml(e.name)}</b>${e.userNote ? ` <span class="small" style="color:var(--accent2)">— 📝 ${escHtml(e.userNote)}</span>` : ''}<br>${e.sets.map((x,k)=>`S${k+1}: ${x.reps} × ${x.weight}kg ${x.done?'✓':'·'}`).join(' · ')}</div>`).join('')}</div></details>
       <button class="btn small danger" style="margin-top:6px;" onclick="deleteSession(${idx})">Borrar</button>
     </div>`;
@@ -2635,7 +3073,35 @@ function releaseWake(){ try { wakeLock?.release(); wakeLock = null; } catch(e){}
 document.addEventListener('visibilitychange', () => { if(document.visibilityState === 'visible' && DB.settings?.wake) requestWake(); });
 
 /* ============= BOOT ============= */
-function showApp(){ $('#onboarding').style.display='none'; $('#ob-actions').style.display='none'; $('#app').style.display=''; const lb = $('#logo-bear'); if(lb) lb.innerHTML = bearSVG('dumbbell', 30); show('home'); }
+function showApp(){ $('#onboarding').style.display='none'; $('#ob-actions').style.display='none'; $('#app').style.display=''; const lb = $('#logo-bear'); if(lb) lb.innerHTML = bearSVG('dumbbell', 30); show('home'); maybeAskPostKnee(); }
+
+/* B2 — Prompt de rodilla post-24h: la molestia al día siguiente es mejor señal
+   de dosis que la de durante la sesión (Holden 2018). Alimenta C2 (correlación)
+   y B4 (deload). Opcional: botón omitir cierra sin dato. */
+function maybeAskPostKnee(){
+  const i = pendingPostKnee(DB.sessions, new Date().toISOString());
+  if(i < 0) return;
+  const s = DB.sessions[i];
+  openModal(`
+    <h2>¿Cómo amaneció la rodilla?</h2>
+    <div class="small" style="margin-bottom:14px;">Tras la sesión del <b>${fmtDate(s.date)}</b>. Cómo responde la rodilla 24h después es la mejor señal de si la carga fue adecuada.</div>
+    <button class="btn primary" data-postknee="bien" style="margin-bottom:8px;padding:14px;background:var(--success);color:#000;">😊 Bien — sin molestia</button>
+    <button class="btn" data-postknee="leve" style="margin-bottom:8px;padding:14px;background:var(--warn);color:#000;">😐 Molestia leve</button>
+    <button class="btn" data-postknee="dolor" style="margin-bottom:8px;padding:14px;background:var(--danger);color:#fff;">😣 Dolor &gt; 3/10</button>
+    <button class="btn ghost" id="postknee-skip" style="width:100%;">Omitir</button>
+  `);
+  $$('#modal [data-postknee]').forEach(b => b.addEventListener('click', () => {
+    s.postKnee = b.dataset.postknee;
+    track('knee_post', { status: s.postKnee, sessionDate: s.date });
+    saveDB();
+    closeModal();
+  }));
+  $('#postknee-skip')?.addEventListener('click', () => {
+    s.postKneeSkipped = true;
+    saveDB();
+    closeModal();
+  });
+}
 
 async function fetchGymRows(uid){
   const [profile, plan, settings, active, sessions] = await Promise.all([

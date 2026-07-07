@@ -58,7 +58,7 @@ App web móvil PWA de entrenamiento para **Andrés "El Oso" Loaiza** (Medellín)
 node tests/test.js
 ```
 
-Exit 0 = pass, 1 = fail. Cobertura actual (141 tests): parseHoldSec/isHoldEx (aguante isométrico), muscleTokens/suggestSwaps (swap PFPS-safe mismo músculo), escHtml, epley1RM/workWeight, parseNum (coma decimal es-CO), phaseOfWeek/windowOf, OBJECTIVE windows, CATALOGO integrity (no stale ids, flags unilateral), HOWTO/TEMPO/EX_TYPE coverage por id, analyzeWeightPattern (constant/asc/desc/mixed/unilateral + drop), decideBump (double progression + knee + shortfalls + caps + cardio skip), PROG_CAPS recalibrados, applyProgression sync de peso probado (propaga proven, respeta cap, no sube en bump negativo, ignora drop), DAYC_ORDER + rdlExercise + migrateDayCV3 (rebuild RDL + idempotencia + preserva pesos), generateLocalPlan Day C composición, DEFAULT_DB.
+Exit 0 = pass, 1 = fail. Cobertura actual (216 tests): parseHoldSec/isHoldEx (aguante isométrico), muscleTokens/suggestSwaps (swap PFPS-safe mismo músculo), escHtml, epley1RM/workWeight, parseNum (coma decimal es-CO), phaseOfWeek/windowOf, OBJECTIVE windows, CATALOGO integrity (no stale ids, flags unilateral), HOWTO/TEMPO/EX_TYPE coverage por id, analyzeWeightPattern (constant/asc/desc/mixed/unilateral + drop), decideBump (double progression + knee + shortfalls + caps + cardio skip + opts.step micro), PROG_CAPS recalibrados, applyProgression sync de peso probado (propaga proven, respeta cap, no sube en bump negativo, ignora drop), DAYC_ORDER + rdlExercise + migrateDayCV3 (rebuild RDL + idempotencia + preserva pesos), generateLocalPlan Day C composición + carryover/compliance/kneeAdjust, sync Supabase (transformaciones puras + realtime), coach adaptativo completo (progressionVelocity/adaptiveStep, kneeLoadCorrelation, carryoverWeights/phaseCompliance, COACH_RULES coverage, sessionVolume/sessionPRs/estimateSessionSec, needsDeload/applyDeloadToWeek, pendingPostKnee, lastNoteFor), DEFAULT_DB.
 
 Harness: stub DOM/localStorage/navigator + `new Function(code + 'return {bindings};')()` para extraer const/function (indirect eval no expone bindings const). Bindings expuestos incluyen `DB`, `PROG_CAPS`, `DAYC_ORDER`, `rdlExercise`, `migrateDayCV3`, `generateLocalPlan` para tests que mutan `DB.plan`, más helpers puros `parseHoldSec`, `isHoldEx`, `muscleTokens`, `suggestSwaps`, `escHtml`. Test runner casero `test(name, fn)` con assertEq/assertDeep/assertTrue/assertFalse.
 
@@ -77,10 +77,12 @@ Harness: stub DOM/localStorage/navigator + `new Function(code + 'return {binding
                  "date":"..."
                } },
   "plan": { "start":"YYYY-MM-DD",
-            "weeks":[[{focus,notes,exercises:[{id,name,sets,reps,weight,rest,isCardio,noWeight,note}]}, ...]],
-            "generatedBy":"local" },
+            "weeks":[[{focus,notes,deload?,exercises:[{id,name,sets,reps,weight,rest,isCardio,noWeight,note}]}, ...]],
+            "generatedBy":"local",
+            "cycleNotes":[{phase,rate,sessions,action,ruleId}], "kneeAdjust":[{id,name,bad,total}] },
   "sessions": [
     { "date":"ISO", "exercises":[...], "planRef":{w:0,d:0}, "kneeStatus":"bien|leve|dolor",
+      "postKnee":"bien|leve|dolor (reporte 24h después, opcional)", "postKneeSkipped":true,
       "note":"comentario libre de la sesión" }
   ],
   "sessionSets": { "0": {id, name, isCardio, noWeight, rest, note,
@@ -355,6 +357,21 @@ Flag `unilateral:true` en CATALOGO + plan generator + ex objects. Helper `isUnil
 Otras reglas:
 - `nextSession()` retorna primer día no completado del plan (independiente del calendario — secuencial)
 - `adaptSessionForKnee(td, status)` ajusta carga y ejercicios según check-in pre-sesión
+
+## Coach adaptativo (Frente C, jul 2026)
+
+El plan aprende del historial de Andrés — 100% local, determinista, sin IA en runtime. Detalle en `context.md` §11b-11e. Resumen:
+
+- **C1 Perfil de respuesta** (`progressionVelocity`/`adaptiveStep`): velocidad real de progresión por ejercicio (top-set por sesión, últimas ≤6, mínimo 4). Estancado (0 kg y ≤0.25 reps/sesión) → **micro-progresión** (medio incremento, piso 1.25kg). Los caps PFPS NUNCA se relajan por código.
+- **C2 Correlación rodilla↔carga** (`kneeLoadCorrelation`): ejercicio flaggeado si ≥3 ejecuciones, ≥60% seguidas de molestia (postKnee 24h o pre check-in siguiente) y ≥15pts sobre la tasa base. El generador reduce su carga -10% + nota "🦵 Coach: reduje…" + `plan.kneeAdjust`. Guard: si todas las sesiones duelen → señal de deload, no de ejercicio.
+- **C3 Periodización reactiva**: al regenerar ciclo, `carryoverWeights` (pesos finales reales por día|ex|fase) + `phaseCompliance` (≥90% de series cumpliendo target). Fase cumplida → arranca con +incremento (`cycle_avanza`); con shortfalls → repite desde pesos reales (`cycle_mantiene`). `plan.cycleNotes`. Nada arranca del baseline teórico si hay ciclo previo.
+- **C4 Explicabilidad** (`COACH_RULES` + `openCoachWhy`): 14 reglas con `{name, rule, evidence}` (Helms, Schoenfeld 2017, González-Badillo, Powers 2010, Crossley/Collins 2016, Holden 2018, ACSM 2026). Cada decisión automática lleva `ruleId` → botón "¿por qué?" en el resumen post-sesión y en Plan.
+- **B1 Resumen post-sesión** (`showSessionSummaryModal`): volumen total, PRs (peso / reps al peso récord), duración real vs estimada (`estimateSessionSec`), cambios de progresión explicados, `⛔ tope PFPS` si el cap clampeó, deshacer.
+- **B2 Rodilla post-24h** (`pendingPostKnee`/`maybeAskPostKnee`): al abrir la app 12-96h tras la última sesión → modal opcional bien/leve/dolor/omitir → `session.postKnee` (dato oro para C2/B4). Visible en Historial.
+- **B3**: `lastNoteFor` muestra la última nota del usuario en la card del ejercicio.
+- **B4 Deload** (`needsDeload`/`applyDeloadToWeek`): 2 sesiones seguidas con drop de fatiga o ≥2 reportes de rodilla en 7 días → **propone** (no impone) semana de descarga: -40% series, misma intensidad, cardio intacto.
+
+Pendiente: `docs/frente-A-visual.md` (frente visual A1-A4 + B5 preparación trekking medible).
 
 ## Helpers de generación de plan
 

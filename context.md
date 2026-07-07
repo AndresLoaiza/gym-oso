@@ -49,6 +49,7 @@ Claves efímeras (prefijo `_`, no en `DEFAULT_DB`): `_currentRef`, `_kneeStatus`
 - `wLeg(f)`/`wBench(f)`/`wPull(f)` → peso desde el 1RM correspondiente × factor, redondea a 2.5kg.
 - Pesos de máquinas derivados por **ratios NSCA** desde los 3 baselines.
 - Day A=pierna, B=tren superior, C=trekking-cardio.
+- **`generateLocalPlan(opts)`** acepta `{prevPlan, sessions}` (regeneración de ciclo, §11b-C3): carryover de pesos finales + avance por compliance + reducción C2 por patrón de rodilla. Sin opts (onboarding) genera desde baseline; C2 igual corre sobre `DB.sessions`.
 - **Day C** orden fijo `DAYC_ORDER`: trotadora → jack_squat → peso_muerto(RDL) → step-up → abductor → stairmaster. `rdlExercise(week)` da peso/reps del RDL por fase.
 - `taperize(day)` → -1 set por ejercicio (sem 8).
 - Cardio/isométrico: `reps` es **string** (`'10 min'`, `'30s'`), `isCardio:true` o `noWeight:true`.
@@ -116,10 +117,34 @@ Double progression (Helms/Schoenfeld). Pipeline:
 4. `PROG_CAPS[id]`: tope de peso solo donde hay flexión de rodilla cargada (leg_ext 17.5, step-up 25, etc.).
 5. Aplica a semanas futuras **same-phase**. Modal `showProgressionModal()` con `from→to` + `↶ Deshacer` (`_progSnapshot`).
 
+## 11b. Coach adaptativo (Frente C — aprende del historial, sin IA)
+
+Lógica pura testeada, todo determinista desde `DB.sessions`:
+- **C1 — Perfil de respuesta**: `exerciseHistory(sessions, exId)` (top-set por sesión) → `progressionVelocity` (kg/reps por sesión, últimas ≤6; class `sin_datos|estancado|normal|rapido`, mínimo 4 sesiones) → `adaptiveStep(exId, sessions)` (estancado → medio paso, piso 1.25, ruleId `resp_lento`). `applyProgression` lo pasa a `decideBump` vía `opts.step`.
+- **C2 — Correlación rodilla↔carga**: `kneeLoadCorrelation(sessions)` — ejercicio "bad" si su sesión tiene `postKnee` leve/dolor o la SIGUIENTE sesión abre con check-in leve/dolor. Flag: ≥3 ejecuciones + ratio ≥0.6 + ≥15pts sobre tasa base (guard: si todo duele → deload, no flag). `generateLocalPlan` reduce -10% el peso del flaggeado + nota "🦵 Coach: reduje…" + `plan.kneeAdjust`.
+- **C3 — Periodización reactiva**: al regenerar ciclo (`nextSession()` pasa `{prevPlan, sessions}`): `carryoverWeights(plan)` (peso final real por `día|exId|fase`, última semana pisa) + `phaseCompliance(sessions, plan)` (% sesiones con ≥90% series cumpliendo target). Fase con rate ≥0.9 → carryover + un incremento (`cycle_avanza`); si no → carryover tal cual (`cycle_mantiene`). `plan.cycleNotes`. Caps PROG_CAPS siempre clampean.
+- **C4 — Explicabilidad**: `COACH_RULES{ruleId: {name, rule, evidence}}` — 14 reglas. `decideBump` devuelve `ruleId`; los cambios de `applyProgression` llevan `ruleId` + `capped`. `openCoachWhy(ruleId)` = modal regla+evidencia. Botones "¿por qué?" en resumen post-sesión y en Plan (cycleNotes/kneeAdjust).
+
+## 11c. Resumen post-sesión (B1)
+
+`finish-session` ya no bifurca en dos modales: siempre `showSessionSummaryModal(summary, changes, snapshot, deload)`:
+- `sessionVolume(exercises)` (Σ reps×peso done), `sessionPRs(session, prevSessions)` (récord de peso, o de reps al peso récord; primera vez ≠ PR), `estimateSessionSec(exercises)` (cardio=su tiempo, hold=n×(hold+rest), fuerza=n×(40s+rest), +150s por cambio de ejercicio) vs `durSec` real.
+- Cambios de progresión con "¿por qué?" (C4) + `⛔ tope PFPS` si `capped`. `↶ Deshacer` solo si hubo cambios.
+- Bloque deload (B4) si aplica.
+
+## 11d. Rodilla post-24h (B2) + deload (B4)
+
+- **B2**: `pendingPostKnee(sessions, nowISO)` — última sesión sin `postKnee`/`postKneeSkipped`, ventana 12-96h. `maybeAskPostKnee()` (llamado en `showApp`) → modal bien/leve/dolor/omitir → `session.postKnee`, track `knee_post`. Alimenta C2 y B4. Se muestra en Historial (`🦵 pre: X · 24h: Y`).
+- **B4**: `needsDeload(sessions, nowISO)` — 2 sesiones seguidas con drop de fatiga (`sessionHasFatigueDrop`) o ≥2 reportes leve/dolor (pre o post) en 7 días → propone (no impone) en el resumen post-sesión. `applyDeloadToWeek(plan, weekIdx, doneDays)`: -40% series (mín 1), cardio intacto, `day.deload=true` + focus "· DESCARGA". `_nextRefNoRegen()` da la semana destino sin regenerar plan. Track `deload_proposed/applied/declined`.
+
+## 11e. Última nota por ejercicio (B3)
+
+`lastNoteFor(sessions, exId)` → nota `userNote` más reciente; se muestra en la card de rutina: `📝 Última vez (fecha): "…"`.
+
 ## 12. Telemetría — `track(type, data)`
 
 100% local. Skip si `settings.telemetry===false`. Nunca rompe la app (try/catch). FIFO cap 2000.
-Tipos: `screen_view, modal_open, glosario_open, howto_open, knee_check, session_start/finish/abandon/preserved, set_add/delete/edit/check, rest_start (kind serie|ejercicio|hold), ex_collapse_toggle, ex_swap, ex_note, session_note`.
+Tipos: `screen_view, modal_open, glosario_open, howto_open, knee_check, knee_post, session_start/finish/abandon/preserved, set_add/delete/edit/check, rest_start (kind serie|ejercicio|hold), ex_collapse_toggle, ex_swap, ex_note, session_note, coach_why_open, deload_proposed/applied/declined`.
 Export JSON desde Config → análisis offline (fricciones, conceptos confusos, abandonos, **ahora también notas de usuario**).
 
 ## 13. Otras pantallas
@@ -166,8 +191,12 @@ Proyecto compartido con la app de viajes (`gbfxpzsblnrasfvxnquk`). Cliente `@sup
 
 ## 16. Tests — `tests/test.js`
 
-Harness: stub DOM/localStorage/navigator/`addEventListener`/`matchMedia`/`supabase` (mock de `createClient`) + `new Function(code + 'return {bindings}')()` para extraer const/function. El boot corre durante la carga (IIFE `getSession` → `showLogin`, stubbeado). Bindings expuestos incluyen las funciones puras (`parseHoldSec, isHoldEx, muscleTokens, suggestSwaps, escHtml, sessionHasProgress, pickSyncSettings, gymStateRows, hydrateGymDB, applyGymRealtime`, etc.). Correr `node tests/test.js` antes de commit. **Agregar tests al añadir lógica testeable.** 157 tests hoy.
+Harness: stub DOM/localStorage/navigator/`addEventListener`/`matchMedia`/`supabase` (mock de `createClient`) + `new Function(code + 'return {bindings}')()` para extraer const/function. El boot corre durante la carga (IIFE `getSession` → `showLogin`, stubbeado). Bindings expuestos incluyen las funciones puras (`parseHoldSec, isHoldEx, muscleTokens, suggestSwaps, escHtml, sessionHasProgress, pickSyncSettings, gymStateRows, hydrateGymDB, applyGymRealtime`, etc. + coach adaptativo: `COACH_RULES, exerciseHistory, progressionVelocity, adaptiveStep, kneeLoadCorrelation, carryoverWeights, phaseCompliance, sessionVolume, sessionPRs, estimateSessionSec, sessionHasFatigueDrop, needsDeload, applyDeloadToWeek, pendingPostKnee, lastNoteFor`). Correr `node tests/test.js` antes de commit. **Agregar tests al añadir lógica testeable.** 216 tests hoy.
 
 ## 17. Deploy
 
-Modificar `index.html` **o `elosogym.css`** (el SW los precachea) → **bump `CACHE` en `sw.js`** (`oso-gym-vN`) para invalidar SW. `git add -A && commit && push` → GitHub Pages ~1-2 min. Estado actual: `oso-gym-v51`.
+Modificar `index.html` **o `elosogym.css`** (el SW los precachea) → **bump `CACHE` en `sw.js`** (`oso-gym-vN`) para invalidar SW. `git add -A && commit && push` → GitHub Pages ~1-2 min. Estado actual: `oso-gym-v58`.
+
+## 18. Pendiente
+
+`docs/frente-A-visual.md` — spec del frente visual (home panel de progreso, gráficas expertas con 1RM/volumen por músculo/asimetría L-R, jerarquía en sesión activa, pulido identidad) + B5 (preparación trekking medible con umbrales investigados).
