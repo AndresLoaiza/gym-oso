@@ -681,6 +681,44 @@ test('windowOf usa las ventanas del objetivo activo', () => {
   DB.profile = null;
 });
 
+test('generateLocalPlan strength_fitness: 8×3 full-body, sin wall sit, str reps 4-6', () => {
+  DB.profile = { objective:'strength_fitness',
+    baseline:{ legPress1RM:60, benchPress1RM:30, pulldown1RM:30, date:'x', tests:{} } };
+  DB.sessions = [];
+  generateLocalPlan();
+  assertEq(DB.plan.objective, 'strength_fitness');
+  assertEq(DB.plan.weeks.length, 8);
+  DB.plan.weeks.forEach(wk => assertEq(wk.length, 3));
+  const allIds = DB.plan.weeks.flat().flatMap(d => d.exercises.map(e => e.id));
+  assertFalse(allIds.includes('_wall_sit'), 'sin wall sit');
+  const legIds = ['sentadilla_hack','leg_press_45','jack_squat'];
+  const pushIds = ['banco_plano','press_hombros_107','pec_deck_polea'];
+  const pullIds = ['pulldown','remo_isolateral','tirador_largo'];
+  DB.plan.weeks[0].forEach(d => {
+    const ids = d.exercises.map(e => e.id);
+    assertTrue(ids.some(i => legIds.includes(i)), 'día con pierna');
+    assertTrue(ids.some(i => pushIds.includes(i)), 'día con empuje');
+    assertTrue(ids.some(i => pullIds.includes(i)), 'día con tracción');
+  });
+  const strDayA = DB.plan.weeks[3][0];
+  const hack = strDayA.exercises.find(e => e.id === 'sentadilla_hack');
+  assertTrue(hack.reps >= 4 && hack.reps <= 6, 'str reps 4-6, got '+hack.reps);
+  DB.profile = null; DB.sessions = [];
+});
+test('generateLocalPlan trekking (default): días A/B/C intactos (no-regresión)', () => {
+  DB.profile = { objective:'trekking_n4_pfps',
+    baseline:{ legPress1RM:60, benchPress1RM:30, pulldown1RM:30, date:'x', tests:{} } };
+  DB.sessions = [];
+  generateLocalPlan();
+  assertEq(DB.plan.objective, 'trekking_n4_pfps');
+  const d0 = DB.plan.weeks[0][0];
+  assertEq(d0.focus, 'Pierna · Cuádriceps');
+  const ids = d0.exercises.map(e => e.id);
+  assertTrue(ids.includes('_wall_sit'), 'trekking conserva wall sit');
+  assertTrue(ids.includes('leg_press_45'), 'trekking conserva prensa');
+  DB.profile = null; DB.sessions = [];
+});
+
 /* ============= FRENTE C: COACH ADAPTATIVO ============= */
 
 // Helper: sesión sintética con un ejercicio de fuerza y sets done

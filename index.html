@@ -1023,6 +1023,8 @@ const EX_TYPE = {
   hiper_inversa:'posterior', prone_leg_curl:'posterior',
   leg_ext:'pfps', crossover:'pfps', adductor_abductor:'pfps',
   camber_curl:'endurance',
+  sentadilla_hack:'strength', banco_declinado:'strength', tirador_largo:'strength',
+  press_hombros_pl:'strength', pec_deck_polea:'hypertrophy', curl_femoral:'posterior',
 };
 
 function phaseOfWeek(w){ return w<2 ? 'adapt' : w<5 ? 'str' : w<7 ? 'end' : 'taper'; }
@@ -2005,23 +2007,81 @@ function generateLocalPlan(opts){
     };
   };
 
+  // ===== Días full-body objetivo strength_fitness (Melisa) =====
+  const sComp = (ph) => ph==='adapt' ? {sets:3, reps:10, rest:90}
+                      : ph==='str'   ? {sets:4, reps:6,  rest:165}
+                      : ph==='end'   ? {sets:3, reps:13, rest:90}
+                      :                {sets:3, reps:8,  rest:120};
+  const sAcc  = (ph) => ph==='adapt' ? {sets:3, reps:12, rest:75}
+                      : ph==='str'   ? {sets:3, reps:10, rest:90}
+                      : ph==='end'   ? {sets:3, reps:15, rest:60}
+                      :                {sets:2, reps:12, rest:75};
+  const dayFB_A = (week) => {
+    const ph = phase(week); const comp = sComp(ph), acc = sAcc(ph);
+    const legPct  = ph==='adapt'?0.55: ph==='str'?0.78: ph==='end'?0.58:0.62;
+    const benchPct= ph==='adapt'?0.65: ph==='str'?0.80: ph==='end'?0.62:0.70;
+    const pullPct = ph==='adapt'?0.65: ph==='str'?0.78: ph==='end'?0.62:0.70;
+    return { focus:'Full-body A · Sentadilla',
+      notes:'Full-body fuerza. Compuestos primero, ROM completo, RIR 2. Cardio al final.',
+      exercises:[
+        { id:'stairmaster', name:'StairMaster (calentamiento)', sets:1, reps:'6 min', rest:0, isCardio:true },
+        { id:'sentadilla_hack', name:'Sentadilla Hack (ROM completo)', ...comp, weight:wLeg(legPct), note:`Compuesto pierna principal. ${comp.sets} sets. Profundidad cómoda completa. RIR 2.` },
+        { id:'peso_muerto', name:'Peso muerto rumano (RDL)', ...comp, weight:wLeg(ph==='str'?0.55:0.42), note:`Cadena posterior (hip hinge). Espalda neutra. ${comp.sets} sets.` },
+        { id:'banco_plano', name:'Press de banca', ...comp, weight:wBench(benchPct), note:`Empuje horizontal. ${comp.sets} sets @ ${Math.round(benchPct*100)}% 1RM.` },
+        { id:'pulldown', name:'Pulldown (polea alta)', sets:comp.sets, reps:comp.reps+2, rest:acc.rest, weight:wPull(pullPct), note:`Tracción vertical. ${comp.sets} sets.` },
+        { id:'curl_femoral', name:'Curl femoral sentado', ...acc, weight:wLeg(0.30), note:`Accesorio isquio. ${acc.sets} sets.` },
+        { id:'trotadora', name:'Caminata inclinada (finisher)', sets:1, reps:'12 min', rest:0, isCardio:true, note:'Cardio Z2 post-pesas (no merma fuerza). Inclinación 8-12%.' }
+      ] };
+  };
+  const dayFB_B = (week) => {
+    const ph = phase(week); const comp = sComp(ph), acc = sAcc(ph);
+    const legPct  = ph==='adapt'?0.55: ph==='str'?0.78: ph==='end'?0.58:0.62;
+    const benchPct= ph==='adapt'?0.65: ph==='str'?0.80: ph==='end'?0.62:0.70;
+    return { focus:'Full-body B · Empuje',
+      notes:'Full-body fuerza. Empuje vertical + prensa + tracción horizontal. ROM completo, RIR 2.',
+      exercises:[
+        { id:'trotadora', name:'Caminata inclinada (calentamiento)', sets:1, reps:'6 min', rest:0, isCardio:true },
+        { id:'leg_press_45', name:'Prensa 45° (ROM completo)', ...comp, weight:wLeg(legPct), note:`Compuesto pierna. ${comp.sets} sets. ROM completo, sin restricción. RIR 2.` },
+        { id:'hiper_inversa', name:'Hiperextensión inversa', ...acc, weight:0, note:`Cadena posterior/glúteo. ${acc.sets} sets. Añade disco si es fácil.` },
+        { id:'press_hombros_107', name:'Press de hombros', ...comp, weight:wBench(0.62), note:`Empuje vertical. ${comp.sets} sets ≈62% banca.` },
+        { id:'remo_isolateral', name:'Remo Iso-Lateral', sets:comp.sets, reps:comp.reps+2, rest:comp.rest, weight:wBench(0.90*benchPct), unilateral:true, note:`UNILATERAL: ${comp.sets} sets × ${comp.reps+2} POR BRAZO. Un lado completo, luego el otro.` },
+        { id:'camber_curl', name:'Curl bíceps Camber', ...acc, weight:wBench(0.30), note:`Accesorio bíceps. ${acc.sets} sets.` },
+        { id:'stairmaster', name:'StairMaster (finisher)', sets:1, reps:'12 min', rest:0, isCardio:true, note:'Cardio Z2 post-pesas.' }
+      ] };
+  };
+  const dayFB_C = (week) => {
+    const ph = phase(week); const comp = sComp(ph), acc = sAcc(ph);
+    const legPct  = ph==='adapt'?0.50: ph==='str'?0.70: ph==='end'?0.52:0.55;
+    const benchPct= ph==='adapt'?0.55: ph==='str'?0.68: ph==='end'?0.55:0.60;
+    const pullPct = ph==='adapt'?0.60: ph==='str'?0.72: ph==='end'?0.58:0.65;
+    return { focus:'Full-body C · Mixto',
+      notes:'Full-body + más acondicionamiento. Compuestos + accesorios, ROM completo. Cardio final más largo.',
+      exercises:[
+        { id:'stairmaster', name:'StairMaster (calentamiento)', sets:1, reps:'6 min', rest:0, isCardio:true },
+        { id:'jack_squat', name:'Jack Squat (ROM completo)', ...comp, weight:wLeg(legPct), note:`Compuesto pierna. ${comp.sets} sets. ROM completo.` },
+        { id:'mancuernas', name:'Split squat / Step-up con mancuernas', sets:acc.sets, reps:12, rest:acc.rest, weight:Math.min(20, Math.max(6, Math.round(rmBench*0.20/2.5)*2.5)), unilateral:true, note:`UNILATERAL: ${acc.sets} sets × 12 POR PIERNA. ROM completo, bajada controlada.` },
+        { id:'pec_deck_polea', name:'Pec Deck / Polea', ...acc, weight:wBench(benchPct), note:`Empuje accesorio pecho. ${acc.sets} sets.` },
+        { id:'tirador_largo', name:'Tirador largo', ...acc, weight:wPull(pullPct), note:`Tracción. ${acc.sets} sets.` },
+        { id:'pantorrilla_sentado', name:'Pantorrilla sentado', sets:4, reps:15, rest:60, weight:wLeg(0.55), note:'Pantorrilla: 4×15, pausa arriba.' },
+        { id:'trotadora', name:'Caminata inclinada (finisher largo)', sets:1, reps:'15 min', rest:0, isCardio:true, note:'Día con más cardio. Z2, inclinación 8-12%, post-pesas.' }
+      ] };
+  };
+
   // Taper semana 8: bajar volumen ~30% (ACSM: deload mantiene intensidad, baja volumen)
   const taperize = (day) => ({
     ...day,
     exercises: day.exercises.map(e => ({...e, sets: Math.max(1, e.sets-1)}))
   });
 
+  const objId = DB.profile?.objective || 'trekking_n4_pfps';
+  const days = objId === 'strength_fitness' ? [dayFB_A, dayFB_B, dayFB_C] : [dayA, dayB, dayC];
   const weeks = [];
   for(let w = 0; w < 8; w++){
     const isTaper = w === 7;
-    const wk = [
-      isTaper ? taperize(dayA(w)) : dayA(w),
-      isTaper ? taperize(dayB(w)) : dayB(w),
-      isTaper ? taperize(dayC(w)) : dayC(w)
-    ];
+    const wk = days.map(fn => isTaper ? taperize(fn(w)) : fn(w));
     weeks.push(wk);
   }
-  DB.plan = { start: todayISO(), weeks, generatedBy: 'local', objective: (DB.profile?.objective || 'trekking_n4_pfps') };
+  DB.plan = { start: todayISO(), weeks, generatedBy: 'local', objective: objId };
   tagPlanWithWindows();
 
   // ===== C3: carryover del ciclo anterior + periodización reactiva =====
