@@ -66,7 +66,7 @@
     <div class="stats-grid" id="home-stats"></div>
     <details class="card">
       <summary>Guía de carga PFPS</summary>
-      <div class="small" style="margin-top:8px;">Reglas para Andrés con síndrome patelofemoral (<span class="term" onclick="openTerm('PFPS')">PFPS</span>). <b>Toca los términos en amarillo para ver qué significan.</b></div>
+      <div class="small" style="margin-top:8px;">Reglas para <span id="pfps-guide-name">Andrés</span> con síndrome patelofemoral (<span class="term" onclick="openTerm('PFPS')">PFPS</span>). <b>Toca los términos en amarillo para ver qué significan.</b></div>
       <ul style="font-size:13px; margin: 10px 0 0 20px; line-height: 1.8;">
         <li>Carga: trabajar en <span class="term" onclick="openTerm('RIR')">RIR</span> 2-3 (deja 2-3 reps en reserva). Si llegas al fallo → bajaste mal o peso muy alto.</li>
         <li>Reps óptimas para principiante + fuerza-resistencia: <b>10-15 reps</b>. Pierna: 12-15.</li>
@@ -1422,7 +1422,7 @@ const COACH_RULES = {
     rule:'Usaste un peso mayor al del plan y cumpliste las reps objetivo sin caída de fatiga. El plan se sincroniza a lo que realmente levantas — el peso probado es mejor evidencia que el peso derivado del baseline.',
     evidence:'Helms — top-set assessment · corrige baselines subestimados' },
   cap_pfps: { name:'Tope de seguridad PFPS',
-    rule:'Este ejercicio tiene tope de peso porque carga directamente la rótula (o por seguridad de la máquina). La progresión continúa por reps, no por peso. Solo Andrés decide subir un cap.',
+    rule:'Este ejercicio tiene tope de peso porque carga directamente la rótula (o por seguridad de la máquina). La progresión continúa por reps, no por peso. Solo tú decides subir un cap.',
     evidence:'Powers 2010 — PFJ stress depende de flexión de rodilla bajo carga' },
   resp_lento: { name:'Micro-progresión (respuesta lenta)',
     rule:'En este ejercicio tu progresión real de las últimas sesiones está estancada (sin ganancia de peso ni reps). Se usa medio incremento en vez del completo — subidas más pequeñas y sostenibles rompen mesetas mejor que insistir con el salto estándar.',
@@ -1725,7 +1725,7 @@ function renderOnbStep(){
   const screens = [
     `<div style="display:flex;justify-content:center;margin:4px 0 12px;">${bearSVG('dumbbell', 140)}</div>
      <h1>EL OSO GYM</h1>
-     <p>Entrenamiento personal para preparación de trekking nivel 4 — adaptado a tu síndrome patelofemoral.</p>
+     <p>Hola, ${escHtml(profileName())} 👋 Entrenamiento personal adaptado a tu objetivo y a tu rodilla.</p>
      <h2>¿Qué hace esta app?</h2>
      <ul style="font-size:14px;color:var(--muted);margin:0 0 16px 20px;line-height:1.6;">
        <li>Genera un plan de 8 semanas evidence-based (ACSM 2026 + PFPS) respetando tu rodilla</li>
@@ -2112,6 +2112,7 @@ function renderHome(){
     gg.innerHTML = Object.entries(GLOSARIO).filter(([k]) => k !== 'Vasto medial oblicuo').map(([k,v]) =>
       `<div class="gitem" onclick="openTerm('${k}')"><b>${k}</b>${v.full}</div>`).join('');
   }
+  const gn = $('#pfps-guide-name'); if(gn) gn.textContent = profileName();
 }
 function currentWeekIdx(){
   if(!DB.plan) return 0;
