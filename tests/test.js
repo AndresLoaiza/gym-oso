@@ -87,7 +87,7 @@ try {
     epley1RM, workWeight, parseNum, phaseOfWeek, windowOf, isUnilateral,
     analyzeWeightPattern, decideBump, applyProgression, tagPlanWithWindows,
     PROG_CAPS, DB, DAYC_ORDER, migrateDayCV3, rdlExercise, generateLocalPlan,
-    parseHoldSec, isHoldEx, muscleTokens, suggestSwaps, escHtml, sessionHasProgress,
+    parseHoldSec, isHoldEx, muscleTokens, suggestSwaps, escHtml, sessionHasProgress, planIsValid,
     pickSyncSettings, gymStateRows, hydrateGymDB, applyGymRealtime,
     COACH_RULES, exerciseHistory, progressionVelocity, adaptiveStep,
     kneeLoadCorrelation, carryoverWeights, phaseCompliance,
@@ -487,12 +487,13 @@ test('pickSyncSettings: solo wake/autoProgress/telemetry (sin github*)', () => {
   assertDeep(s, { wake:true, autoProgress:false, telemetry:true });
 });
 test('gymStateRows: arma 4 filas de fila única con user_id + data', () => {
-  const db = { profile:{w:75}, plan:{start:'2026'}, settings:{wake:true,autoProgress:true,telemetry:true},
+  const plan = { start:'2026', weeks:[[{focus:'A',exercises:[]}]] };
+  const db = { profile:{w:75}, plan, settings:{wake:true,autoProgress:true,telemetry:true},
     sessionSets:{'0':{id:'x'}}, _currentRef:{w:0,d:1}, _kneeStatus:'bien', _adaptedSession:null, _sessionNote:'hola' };
   const r = gymStateRows(db, 'UID');
   assertEq(r.profile.user_id, 'UID');
   assertDeep(r.profile.data, {w:75});
-  assertDeep(r.plan.data, {start:'2026'});
+  assertDeep(r.plan.data, plan);
   assertEq(r.settings.data.wake, true);
   assertEq(r.settings.data.githubToken, undefined, 'settings no lleva github*');
   assertDeep(r.active_session.data.sessionSets, {'0':{id:'x'}});
@@ -513,7 +514,7 @@ test('hydrateGymDB: ignora telemetry remota aunque venga en rows (local manda)',
 });
 test('hydrateGymDB: reconstruye DB desde filas + conserva telemetría local', () => {
   const rows = {
-    profile: { data:{w:80} }, plan: { data:{start:'X'} },
+    profile: { data:{w:80} }, plan: { data:{start:'X', weeks:[[{focus:'A',exercises:[]}]]} },
     settings: { data:{wake:true} },
     active_session: { data:{ sessionSets:{'0':{id:'a'}}, _currentRef:{w:1,d:0}, _kneeStatus:'leve', _adaptedSession:null, _sessionNote:'n' } },
     sessions: [ { data:{date:'d1'} }, { data:{date:'d2'} } ],
@@ -521,7 +522,7 @@ test('hydrateGymDB: reconstruye DB desde filas + conserva telemetría local', ()
   const localTel = { events:[{x:1}], version:1 };
   const db = hydrateGymDB(DEFAULT_DB, rows, localTel);
   assertDeep(db.profile, {w:80});
-  assertDeep(db.plan, {start:'X'});
+  assertDeep(db.plan, {start:'X', weeks:[[{focus:'A',exercises:[]}]]});
   assertEq(db.sessions.length, 2);
   assertEq(db.sessions[0].date, 'd1');
   assertDeep(db.sessionSets, {'0':{id:'a'}});
@@ -573,6 +574,48 @@ test('applyGymRealtime: gym_sessions duplicada (misma date) → no agrega', () =
   const changed = applyGymRealtime(db, 'gym_sessions', { data:{date:'d1'} });
   assertFalse(changed);
   assertEq(db.sessions.length, 1);
+});
+
+console.log('\n--- Invariante plan válido (anti gym_plan vacío) ---');
+test('planIsValid: null / {} / sin weeks / weeks vacío → false', () => {
+  assertFalse(planIsValid(null));
+  assertFalse(planIsValid(undefined));
+  assertFalse(planIsValid({}));
+  assertFalse(planIsValid({ start:'x' }));
+  assertFalse(planIsValid({ weeks: [] }));
+  assertFalse(planIsValid({ weeks: 'nope' }));
+});
+test('planIsValid: plan con weeks[] no vacío → true', () => {
+  assertTrue(planIsValid({ weeks: [[{ focus:'A', exercises:[] }]] }));
+});
+test('gymStateRows: NUNCA persiste un plan inválido ({} → null)', () => {
+  assertEq(gymStateRows({ plan: {} }, 'UID').plan.data, null);
+  assertEq(gymStateRows({ plan: { weeks: [] } }, 'UID').plan.data, null);
+  const good = { weeks: [[{ focus:'A', exercises:[] }]] };
+  assertDeep(gymStateRows({ plan: good }, 'UID').plan.data, good);
+});
+test('hydrateGymDB: plan remoto vacío ({}) NO se hidrata → null (dispara auto-sana)', () => {
+  const db = hydrateGymDB(DEFAULT_DB, { plan:{ data:{} }, sessions:[] }, null);
+  assertEq(db.plan, null);
+});
+test('hydrateGymDB: plan remoto válido sí se hidrata', () => {
+  const good = { weeks: [[{ focus:'A', exercises:[] }]] };
+  const db = hydrateGymDB(DEFAULT_DB, { plan:{ data:good }, sessions:[] }, null);
+  assertDeep(db.plan, good);
+});
+test('applyGymRealtime: eco de gym_plan inválido ({}) NO pisa el plan bueno', () => {
+  const good = { weeks: [[{ focus:'A', exercises:[] }]] };
+  const db = { plan: good };
+  const changed = applyGymRealtime(db, 'gym_plan', { data: {} });
+  assertFalse(changed);
+  assertDeep(db.plan, good);  // preservado
+});
+test('applyGymRealtime: eco de gym_plan válido sí actualiza', () => {
+  const good = { weeks: [[{ focus:'B', exercises:[] }]] };
+  const db = { plan: null };
+  const changed = applyGymRealtime(db, 'gym_plan', { data: good });
+  assertTrue(changed);
+  assertDeep(db.plan, good);
 });
 
 /* ============= FRENTE C: COACH ADAPTATIVO ============= */

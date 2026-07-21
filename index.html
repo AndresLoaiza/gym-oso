@@ -287,6 +287,9 @@ function saveDB(){
 function sessionHasProgress(sessionSets){
   return Object.values(sessionSets || {}).some(e => e.sets?.some(s => s.done || s.userAdded));
 }
+// Invariante de integridad: un plan es válido solo si trae weeks[] no vacío.
+// Un {} / null / plan sin weeks NUNCA se persiste, hidrata, renderiza ni bloquea (auto-sana desde baseline).
+function planIsValid(plan){ return !!(plan && Array.isArray(plan.weeks) && plan.weeks.length); }
 
 /* ============= SYNC SUPABASE (backup + multi-dispositivo) =============
    localStorage sigue siendo fuente primaria en sesión (offline-first).
@@ -303,7 +306,7 @@ function pickSyncSettings(settings){
 function gymStateRows(db, uid){
   return {
     profile:        { user_id: uid, data: db.profile ?? null },
-    plan:           { user_id: uid, data: db.plan ?? null },
+    plan:           { user_id: uid, data: planIsValid(db.plan) ? db.plan : null },
     settings:       { user_id: uid, data: pickSyncSettings(db.settings) },
     active_session: { user_id: uid, data: {
       sessionSets:     db.sessionSets || {},
@@ -322,7 +325,7 @@ function hydrateGymDB(defaultDB, rows, localTelemetry){
   return {
     ...defaultDB,
     profile:  rows.profile?.data ?? null,
-    plan:     rows.plan?.data ?? null,
+    plan:     planIsValid(rows.plan?.data) ? rows.plan.data : null,
     sessions: (rows.sessions || []).map(r => r.data),
     sessionSets: as.sessionSets || {},
     settings: { ...defaultDB.settings, ...(rows.settings?.data || {}) },
@@ -346,7 +349,7 @@ function applyGymRealtime(db, table, row){
   }
   const sliceEq = (cur, next) => JSON.stringify(cur ?? null) === JSON.stringify(next ?? null);
   if(table === 'gym_profile'){ if(sliceEq(db.profile, data)) return false; db.profile = data; return true; }
-  if(table === 'gym_plan'){    if(sliceEq(db.plan, data)) return false;    db.plan = data;    return true; }
+  if(table === 'gym_plan'){    if(!planIsValid(data)) return false;    if(sliceEq(db.plan, data)) return false;    db.plan = data;    return true; }
   if(table === 'gym_settings'){
     const next = { ...(db.settings||{}), ...(data||{}) };
     if(sliceEq(db.settings, next)) return false;
@@ -2096,7 +2099,13 @@ function uniqueWeeks(){
   return ws.size;
 }
 function nextSession(){
-  if(!DB.plan) return null;
+  // Auto-sana un plan corrupto/vacío (sin weeks[]): si hay baseline, regenera; si no, no hay plan.
+  if(!planIsValid(DB.plan)){
+    if(!DB.profile?.baseline) return null;
+    DB.sessionSets = {}; DB._currentRef = null; DB._kneeStatus = null; DB._adaptedSession = null;
+    generateLocalPlan({ prevPlan: DB.plan?.weeks ? DB.plan : null, sessions: DB.sessions });
+    return { weekIdx: 0, dayIdx: 0, session: DB.plan.weeks[0][0] };
+  }
   const done = new Set((DB.sessions || []).filter(s => s.planRef).map(s => `${s.planRef.w}-${s.planRef.d}`));
   for(let w = 0; w < DB.plan.weeks.length; w++){
     for(let d = 0; d < DB.plan.weeks[w].length; d++){
@@ -2117,8 +2126,8 @@ $('#go-rutina').addEventListener('click', () => show('rutina'));
 
 /* ============= PLAN ============= */
 function renderPlan(){
-  if(!DB.plan){ $('#plan-summary').innerHTML = '<div class="small">No hay plan. Completa onboarding.</div>'; return; }
-  const ns = nextSession();
+  if(!planIsValid(DB.plan) && !DB.profile?.baseline){ $('#plan-summary').innerHTML = '<div class="small">No hay plan. Completa onboarding.</div>'; return; }
+  const ns = nextSession();  // auto-sana el plan si estaba vacío y hay baseline
   const weekN = ns ? ns.weekIdx : DB.plan.weeks.length - 1;
   const sessionsDone = (DB.sessions || []).filter(s => s.planRef).length;
   const total = DB.plan.weeks.reduce((a,wk) => a + wk.length, 0);
@@ -3141,6 +3150,12 @@ async function bootWithSession(){
     }
   }
   migrateDayCV3();
+  // Auto-sana: si el plan remoto/local quedó corrupto ({} sin weeks) pero hay baseline,
+  // regenera un plan válido. El próximo push sobrescribe el gym_plan vacío en la nube.
+  if(!planIsValid(DB.plan) && DB.profile?.baseline){
+    generateLocalPlan({ sessions: DB.sessions });
+    saveDB();
+  }
   _sbReady = true;
   subscribeGymRealtime();
   if(!remoteHasData) pushGymState();  // primer push del estado local a la nube
