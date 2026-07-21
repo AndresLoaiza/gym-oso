@@ -405,9 +405,15 @@ function subscribeGymRealtime(){
       (payload) => {
         const row = payload.new && Object.keys(payload.new).length ? payload.new : null;
         if(!row) return;
+        // Anti-pérdida: un eco (posiblemente stale) de la sesión activa NO debe pisar el
+        // trabajo en curso del propio dispositivo. localStorage manda mientras hay progreso local.
+        if(t === 'gym_active_session' && sessionHasProgress(DB.sessionSets)){
+          track('session_preserved', { reason: 'realtime_echo_blocked' });
+          return;
+        }
         if(applyGymRealtime(DB, t, row)){
           try { localStorage.setItem(STORE_KEY, JSON.stringify(DB)); } catch(e){}  // persistir sin re-disparar sync
-          const active = document.querySelector('.tab.active')?.dataset?.tab || 'home';
+          const active = document.querySelector('.nav-btn.active')?.dataset?.tab || 'home';
           show(active);  // re-render de la pantalla actual
         }
       });
