@@ -14,6 +14,16 @@
 </head>
 <body>
 
+<!-- Selector de perfil (1 perfil por dispositivo) -->
+<div id="profile-picker" style="display:none;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;padding:24px;gap:16px;">
+  <div style="display:flex;justify-content:center;">
+    <span id="picker-bear" style="display:inline-flex;width:120px;height:120px;"></span>
+  </div>
+  <h1 style="text-align:center;">¿Quién eres?</h1>
+  <div class="small" style="text-align:center;max-width:280px;">Cada persona tiene su propio plan y sus datos. Elige tu perfil en este dispositivo.</div>
+  <div id="picker-list" style="display:flex;flex-direction:column;gap:10px;width:100%;max-width:320px;margin-top:8px;"></div>
+</div>
+
 <!-- ONBOARDING (oculto si yaCompleto) -->
 <div id="onboarding" class="onboard" style="display:none">
   <div class="step-dots">
@@ -3149,6 +3159,23 @@ async function fetchGymRows(uid){
   };
 }
 
+function showProfilePicker(){
+  const pb = $('#picker-bear'); if(pb) pb.innerHTML = bearSVG('dumbbell', 120);
+  const list = $('#picker-list');
+  list.innerHTML = PROFILES.map(p =>
+    `<button class="btn primary" data-pid="${p.id}" style="padding:16px;font-size:16px;">${escHtml(p.name)}</button>`
+  ).join('');
+  list.querySelectorAll('[data-pid]').forEach(b => b.addEventListener('click', () => pickProfile(b.dataset.pid)));
+  $('#profile-picker').style.display = 'flex';
+  $('#onboarding').style.display = 'none';
+  $('#app').style.display = 'none';
+}
+function pickProfile(id){
+  localStorage.setItem(PROFILE_KEY, id);
+  _gymUid = uidOf(id);
+  $('#profile-picker').style.display = 'none';
+  bootWithSession();
+}
 async function bootWithSession(){
   // Hidratar desde la nube si hay datos remotos; si no, primer push desde el localStorage local.
   let remote = null;
@@ -3179,7 +3206,19 @@ async function bootWithSession(){
   if(!DB.profile){ showOnboarding(); } else { showApp(); }
 }
 
-bootWithSession();
+// Resolución de identidad antes del boot. Device con datos previos = Andrés (migración
+// legacy, sin selector). Device fresh sin elección = selector. Elección guardada = directo.
+(function startApp(){
+  const storedId = localStorage.getItem(PROFILE_KEY);
+  const id = resolveProfileId(storedId, !!DB.profile);
+  if(id){
+    if(id !== storedId) localStorage.setItem(PROFILE_KEY, id);  // persiste migración
+    _gymUid = uidOf(id);
+    bootWithSession();
+  } else {
+    showProfilePicker();
+  }
+})();
 
 if('serviceWorker' in navigator){
   navigator.serviceWorker.register('sw.js').catch(()=>{});
