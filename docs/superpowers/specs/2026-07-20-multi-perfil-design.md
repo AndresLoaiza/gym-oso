@@ -76,7 +76,8 @@ Flujo en boot (antes de `bootWithSession`):
 ### 5. Config → "Cambiar persona"
 
 - Botón en Config → modal `openModal()` con aviso claro: "Esto limpia los datos de entrenamiento de ESTE dispositivo y recarga como otro perfil. Los datos en la nube de cada persona quedan intactos."
-- Al confirmar: borra `localStorage['gymProfileId']` + borra `localStorage['elosoGymV2']` → `location.reload()` → selector.
+- Al confirmar (**anti-pérdida**): `await pushGymState()` (push final síncrono, no el debounce fire-and-forget) para volcar cualquier cambio pendiente a la nube; **solo si el push resuelve OK** → borra `localStorage['gymProfileId']` + `localStorage['elosoGymV2']` → `location.reload()` → selector.
+  - Si el push falla (offline) → **no borra**; avisa "sin conexión, no puedo cambiar de perfil sin perder datos; reintenta con internet". El wipe destructivo nunca corre con cambios sin subir.
 - La nube de cada UID queda intacta; re-elegir un perfil re-hidrata desde su nube.
 - Único mecanismo de "switch". **YAGNI:** sin UI de agregar/borrar perfiles (los perfiles son la lista baked).
 
@@ -84,6 +85,8 @@ Flujo en boot (antes de `bootWithSession`):
 
 - Todas las fns de sync (`pushGymState`, `pushSession`, `fetchGymRows`, `subscribeGymRealtime`, `bootWithSession`) ya referencian `_gymUid`. Volverlo dinámico basta para particionar: cada perfil → sus propias filas `gym_*` en el mismo proyecto Supabase.
 - Sin cambio de schema, sin cambio de RLS (anon abierta, cualquier UID válido sirve como partición).
+- **`pushGymState()` debe devolver `true/false`** (hoy es fire-and-forget y traga el error) para que "Cambiar persona" pueda esperar el push final y abortar el wipe si falló. El resto de callers ignoran el retorno (comportamiento igual).
+- **Gap conocido de sesiones:** `pushGymState` sube las 5 tablas de fila única, NO `gym_sessions` (esas se insertan en `pushSession` al finalizar). Una sesión cuyo `pushSession` falló offline vive solo local y se perdería en el wipe. Fuera de alcance de A cerrarlo del todo (es el item pendiente "Reconciliación de `gym_sessions`" en CLAUDE.md); A mitiga exigiendo online para el switch, pero se documenta el borde. Cierre completo = feature de reconciliación aparte.
 
 ## Manejo de errores / bordes
 
