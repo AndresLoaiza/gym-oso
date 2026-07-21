@@ -2293,6 +2293,11 @@ function showWeek(i){
   $('#plan-detail').innerHTML = html;
 }
 /* ============= RUTINA HOY ============= */
+// Pide el check-in de rodilla solo si el objetivo NO es kneeSafe; si lo es, arranca directo con 'bien'.
+function requestKneeCheckin(onDone){
+  if(activeObjective().kneeSafe){ DB._kneeStatus = 'bien'; onDone(); return; }
+  askKneeCheckin(onDone);
+}
 function askKneeCheckin(onDone){
   openModal(`
     <h2>¿Cómo está tu rodilla hoy?</h2>
@@ -2317,6 +2322,7 @@ function askKneeCheckin(onDone){
 }
 
 function adaptSessionForKnee(td, status){
+  if(activeObjective().kneeSafe) return td;  // objetivo sin PFPS: nunca adapta por rodilla
   if(status === 'bien') return td;
   const scale = (w, f) => Math.round((w || 0) * f / 2.5) * 2.5;
   if(status === 'leve'){
@@ -2328,7 +2334,7 @@ function adaptSessionForKnee(td, status){
   }
   if(status === 'dolor'){
     const avoid = new Set(['leg_ext','sentadilla_hack','leg_press_45','jack_squat','hack_squat']);
-    const kept = td.exercises.filter(e => !avoid.includes(e.id));
+    const kept = td.exercises.filter(e => !avoid.has(e.id));
     const extra = [
       { id:'_wall_sit', name:'Sentadilla a pared (isométrico)', sets:4, reps:'30s', noWeight:true, rest:45, note:'Día con dolor: isométricos para activar VMO sin estresar rótula.' },
       { id:'adductor_abductor', name:'Abductor (foco VMO)', sets:3, reps:15, weight:15, rest:45, note:'Foco vasto medial oblicuo.' },
@@ -2390,7 +2396,7 @@ function renderRutina(){
   // o sessionSets vacío (recuperación: modal de rodilla descartado sin elegir →
   // quedaba sesión en blanco sin forma de reconstruirla. Ver bug S2D1 0/0).
   if(refChanged || !DB._kneeStatus || staleSession || ssKeys.length === 0){
-    askKneeCheckin(() => {
+    requestKneeCheckin(() => {
       DB._currentRef = newRef;
       const td = adaptSessionForKnee(ns.session, DB._kneeStatus || 'bien');
       DB._adaptedSession = td;

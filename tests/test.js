@@ -95,7 +95,7 @@ try {
     kneeLoadCorrelation, carryoverWeights, phaseCompliance,
     sessionVolume, sessionPRs, estimateSessionSec,
     sessionHasFatigueDrop, needsDeload, applyDeloadToWeek,
-    pendingPostKnee, lastNoteFor
+    pendingPostKnee, lastNoteFor, adaptSessionForKnee
   };`;
   exposed = new Function(code + '\n' + exposeReturn)();
 } catch(e) {
@@ -717,6 +717,23 @@ test('generateLocalPlan trekking (default): días A/B/C intactos (no-regresión)
   assertTrue(ids.includes('_wall_sit'), 'trekking conserva wall sit');
   assertTrue(ids.includes('leg_press_45'), 'trekking conserva prensa');
   DB.profile = null; DB.sessions = [];
+});
+
+test('adaptSessionForKnee: objetivo kneeSafe → retorna plan sin tocar (aunque status=dolor)', () => {
+  DB.profile = { objective:'strength_fitness' };
+  const td = { focus:'X', notes:'n', exercises:[{ id:'leg_press_45', name:'P', sets:4, reps:6, weight:50 }] };
+  const out = adaptSessionForKnee(td, 'dolor');
+  assertEq(out.focus, 'X', 'focus sin sufijo de dolor');
+  assertEq(out.exercises[0].weight, 50, 'peso sin reducir');
+  assertEq(out.exercises.length, 1, 'sin ejercicios extra de PFPS');
+  DB.profile = null;
+});
+test('adaptSessionForKnee: objetivo PFPS (no kneeSafe) sigue adaptando por dolor', () => {
+  DB.profile = { objective:'trekking_n4_pfps' };
+  const td = { focus:'X', notes:'n', exercises:[{ id:'leg_press_45', name:'P', sets:4, reps:6, weight:50 }] };
+  const out = adaptSessionForKnee(td, 'dolor');
+  assertTrue(/ADAPTADO POR DOLOR/.test(out.focus), 'trekking sí adapta');
+  DB.profile = null;
 });
 
 /* ============= FRENTE C: COACH ADAPTATIVO ============= */
