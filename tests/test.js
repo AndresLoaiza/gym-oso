@@ -88,6 +88,7 @@ try {
     analyzeWeightPattern, decideBump, applyProgression, tagPlanWithWindows,
     PROG_CAPS, DB, DAYC_ORDER, migrateDayCV3, rdlExercise, generateLocalPlan,
     parseHoldSec, isHoldEx, muscleTokens, suggestSwaps, escHtml, sessionHasProgress, planIsValid,
+    PROFILES, resolveProfileId, uidOf, profileName,
     pickSyncSettings, gymStateRows, hydrateGymDB, applyGymRealtime,
     COACH_RULES, exerciseHistory, progressionVelocity, adaptiveStep,
     kneeLoadCorrelation, carryoverWeights, phaseCompliance,
@@ -616,6 +617,36 @@ test('applyGymRealtime: eco de gym_plan válido sí actualiza', () => {
   const changed = applyGymRealtime(db, 'gym_plan', { data: good });
   assertTrue(changed);
   assertDeep(db.plan, good);
+});
+
+console.log('\n--- Multi-perfil: resolución de identidad ---');
+test('PROFILES: ids y uids únicos, andres usa uid legacy', () => {
+  const ids = PROFILES.map(p => p.id);
+  const uids = PROFILES.map(p => p.uid);
+  assertEq(new Set(ids).size, ids.length, 'ids únicos');
+  assertEq(new Set(uids).size, uids.length, 'uids únicos');
+  const andres = PROFILES.find(p => p.id === 'andres');
+  assertEq(andres.uid, 'ea8ea549-eacb-465c-9883-778cad0fcf20');
+  PROFILES.forEach(p => assertTrue(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(p.uid), 'uid con forma UUID: '+p.id));
+});
+test('resolveProfileId: storedId válido → ese id', () => {
+  assertEq(resolveProfileId('melisa', false), 'melisa');
+  assertEq(resolveProfileId('andres', true), 'andres');
+});
+test('resolveProfileId: storedId inválido se ignora → migración o null', () => {
+  assertEq(resolveProfileId('fantasma', true), 'andres');
+  assertEq(resolveProfileId('fantasma', false), null);
+});
+test('resolveProfileId: sin storedId + datos locales → andres (migración)', () => {
+  assertEq(resolveProfileId(null, true), 'andres');
+});
+test('resolveProfileId: sin storedId + sin datos → null (selector)', () => {
+  assertEq(resolveProfileId(null, false), null);
+});
+test('uidOf / profileName: conocido → valor; desconocido → fallback', () => {
+  assertEq(uidOf('melisa'), '8554bae7-752c-4f37-ad4d-00dba477fe38');
+  assertEq(profileName('andres'), 'Andrés');
+  assertEq(profileName('xxx'), 'Andrés', 'fallback');
 });
 
 /* ============= FRENTE C: COACH ADAPTATIVO ============= */

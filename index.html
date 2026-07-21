@@ -247,7 +247,24 @@ const STORE_KEY = 'elosoGymV2';
 const SUPABASE_URL = 'https://gbfxpzsblnrasfvxnquk.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_mRvhm4a-U8F9NqBNe4fNiQ_q_0cYLiD';
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-const _gymUid = 'ea8ea549-eacb-465c-9883-778cad0fcf20';  // UID fijo (único usuario)
+// ===== Multi-perfil (1 perfil por dispositivo, elección explícita) =====
+// Cada perfil sincroniza a SUS propias filas gym_* (keyed por uid) en el mismo proyecto Supabase.
+// Agregar una persona = añadir un objeto aquí.
+const PROFILES = [
+  { id: 'andres', name: 'Andrés', uid: 'ea8ea549-eacb-465c-9883-778cad0fcf20' }, // legacy (datos existentes)
+  { id: 'melisa', name: 'Melisa', uid: '8554bae7-752c-4f37-ad4d-00dba477fe38' },
+];
+const PROFILE_KEY = 'gymProfileId';
+function uidOf(id){ return (PROFILES.find(p => p.id === id) || PROFILES[0]).uid; }
+function profileName(id){ return (PROFILES.find(p => p.id === (id ?? localStorage.getItem(PROFILE_KEY))) || PROFILES[0]).name; }
+// Decide qué perfil usar en boot. Devuelve id, o null si hay que mostrar el selector.
+// hasLocalProfile: !!DB.profile — device con datos previos = Andrés (migración legacy).
+function resolveProfileId(storedId, hasLocalProfile){
+  if(storedId && PROFILES.some(p => p.id === storedId)) return storedId;
+  if(hasLocalProfile) return 'andres';
+  return null;
+}
+let _gymUid = uidOf('andres');  // valor provisional; boot lo fija según el perfil resuelto
 const DEFAULT_DB = {
   profile: null, // {weight, height, age, knee, trekDate, baseline}
   plan: null,    // {start, weeks: [[{focus, exercises:[...]}, ...]]}
