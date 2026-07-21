@@ -1728,6 +1728,7 @@ function $$(sel){ return document.querySelectorAll(sel); }
 /* ============= ONBOARDING ============= */
 let obStep = 0;
 const obData = {
+  objective: null,
   weight: 75, height: 175, age: 32,
   tests: {
     leg_press_45: { name:'Prensa 45° (pierna)', w:30, r:12, hint:'Pies altos y anchos. NO pasar 90°. Carga cómoda 12 reps.' },
@@ -1735,7 +1736,11 @@ const obData = {
     pulldown:     { name:'Pulldown (tracción)', w:25, r:10, hint:'Polea alta. Carga cómoda 10 reps. Empezar 20-30kg.' }
   }
 };
-const OB_STEPS_COUNT = 4;
+// Flujo dinámico: el paso de rodilla solo aparece si el objetivo NO es kneeSafe.
+function obFlow(){
+  const kneeSafe = OBJECTIVES[obData.objective || 'trekking_n4_pfps']?.kneeSafe;
+  return ['welcome','objective','perfil', ...(kneeSafe ? [] : ['knee']), 'baseline'];
+}
 
 function showOnboarding(){
   $('#onboarding').style.display = 'flex';
@@ -1744,25 +1749,38 @@ function showOnboarding(){
   renderOnbStep();
 }
 function renderOnbStep(){
-  $$('.step-dots .dot').forEach((d,i) => d.classList.toggle('active', i <= obStep));
+  const flow = obFlow();
+  const key = flow[obStep];
+  const dots = $('.step-dots');
+  if(dots){ dots.innerHTML = flow.map((_,i) => `<div class="dot${i<=obStep?' active':''}" data-dot="${i}"></div>`).join(''); }
   $('#ob-back').style.display = obStep === 0 ? 'none' : '';
   const wrap = $('#ob-step');
-  const screens = [
+  const screens = {
+    welcome:
     `<div style="display:flex;justify-content:center;margin:4px 0 12px;">${bearSVG('dumbbell', 140)}</div>
      <h1>EL OSO GYM</h1>
-     <p>Hola, ${escHtml(profileName())} 👋 Entrenamiento personal adaptado a tu objetivo y a tu rodilla.</p>
+     <p>Hola, ${escHtml(profileName())} 👋 Entrenamiento personal adaptado a tu objetivo.</p>
      <h2>¿Qué hace esta app?</h2>
      <ul style="font-size:14px;color:var(--muted);margin:0 0 16px 20px;line-height:1.6;">
-       <li>Genera un plan de 8 semanas evidence-based (ACSM 2026 + PFPS) respetando tu rodilla</li>
+       <li>Genera un plan de 8 semanas evidence-based (ACSM 2026)</li>
        <li>Te guía sesión a sesión: series, reps, peso óptimo</li>
        <li>Catálogo de las 25 máquinas de tu gym pre-cargadas</li>
        <li>Progreso visual + ajuste automático de cargas</li>
      </ul>`,
+    objective:
+    `<h2>¿Cuál es tu objetivo?</h2>
+     <p>Define tu plan y las reglas de entrenamiento.</p>
+     <div class="pill-row" id="ob-obj" style="flex-direction:column;gap:10px;">
+       <button class="pill" data-v="strength_fitness" style="padding:16px;text-align:left;">💪 <b>Fuerza + estar en forma</b><br><span class="small" style="opacity:.7">Full-body, ROM completo, sin restricciones. Para personas sanas.</span></button>
+       <button class="pill" data-v="trekking_n4_pfps" style="padding:16px;text-align:left;">🥾 <b>Trekking + cuidado de rodilla</b><br><span class="small" style="opacity:.7">Preparación de montaña con protección patelofemoral (PFPS).</span></button>
+     </div>`,
+    perfil:
     `<h2>Tu perfil</h2>
      <p>Datos básicos para calibrar la app.</p>
      <label class="field"><span class="lbl">Peso corporal (kg)</span><input class="input" id="ob-w" type="text" inputmode="decimal" value="${obData.weight}"></label>
      <label class="field"><span class="lbl">Estatura (cm)</span><input class="input" id="ob-h" type="number" inputmode="numeric" value="${obData.height}"></label>
      <label class="field"><span class="lbl">Edad</span><input class="input" id="ob-a" type="number" inputmode="numeric" value="${obData.age}"></label>`,
+    knee:
     `<h2>Tu condición clínica</h2>
      <div class="pfps-warn"><b>Síndrome de dolor patelofemoral (${term('PFPS')})</b><br>
      La app aplicará automáticamente:<br>
@@ -1777,20 +1795,30 @@ function renderOnbStep(){
        <button class="pill" data-v="leve">Molestia leve</button>
        <button class="pill" data-v="dolor">Dolor &gt;3/10</button>
      </div>`,
+    baseline:
     `<h2>Test de baseline (3 máquinas)</h2>
      <p>Test seguro en los <b>3 compuestos principales</b>. Calculamos tu ${term('1RM')} con ${term('Epley')} y derivamos peso para cada máquina del plan.</p>
      <div class="pfps-warn"><b>Protocolo (mismo para los 3):</b><br>
      1. Calienta 5 min bici/StairMaster<br>
      2. 1-2 series ligeras de calentamiento<br>
      3. Carga peso que creas hacer <b>cómodo</b> el # reps indicado (${term('RIR')} 1-2)<br>
-     4. Anota peso y reps reales. NO ir al fallo. PFPS: prensa no &gt;90° flexión.<br>
+     4. Anota peso y reps reales. NO ir al fallo.<br>
      <b>Si nunca has hecho un ejercicio:</b> usa peso muy bajo, mide ahí. Mejor subestimar.</div>
      <div id="ob-tests"></div>
      <div id="ob-1rm" class="small" style="margin-top:8px;line-height:1.6;"></div>`
-  ];
-  wrap.innerHTML = screens[obStep];
+  };
+  wrap.innerHTML = screens[key];
 
-  if(obStep === 2){
+  if(key === 'objective'){
+    $$('#ob-obj .pill').forEach(p => {
+      if(p.dataset.v === (obData.objective || '')) p.classList.add('active');
+      p.addEventListener('click', () => {
+        obData.objective = p.dataset.v;
+        renderOnbStep();  // re-render: marca selección + recomputa flujo (knee on/off)
+      });
+    });
+  }
+  if(key === 'knee'){
     $$('#ob-knee .pill').forEach(p => {
       if(p.dataset.v === (obData.knee || 'bien')) p.classList.add('active');
       p.addEventListener('click', () => {
@@ -1801,7 +1829,7 @@ function renderOnbStep(){
     });
     obData.knee = obData.knee || 'bien';
   }
-  if(obStep === 3){
+  if(key === 'baseline'){
     const wrap2 = $('#ob-tests');
     wrap2.innerHTML = Object.entries(obData.tests).map(([id, t]) => `
       <div class="card" style="background:var(--surface2); padding:10px; margin-bottom:10px;">
@@ -1846,20 +1874,24 @@ function renderOnbStep(){
     }));
     calc();
   }
-  $('#ob-next').textContent = obStep === 3 ? 'Generar mi plan' : 'Siguiente';
+  $('#ob-next').textContent = key === 'baseline' ? 'Generar mi plan' : 'Siguiente';
 }
 
 $('#ob-next').addEventListener('click', async () => {
-  if(obStep === 1){
+  const flow = obFlow();
+  const key = flow[obStep];
+  if(key === 'objective' && !obData.objective){ obData.objective = 'strength_fitness'; }
+  if(key === 'perfil'){
     obData.weight = parseNum($('#ob-w').value) || 75;
     obData.height = +$('#ob-h').value || 175;
     obData.age = +$('#ob-a').value || 32;
   }
-  if(obStep === 3){
+  if(key === 'baseline'){
     const t = obData.tests;
     DB.profile = {
       weight: obData.weight, height: obData.height, age: obData.age,
-      knee: obData.knee,
+      knee: obData.knee || 'bien',
+      objective: obData.objective || 'trekking_n4_pfps',
       baseline: {
         legPress1RM:    epley1RM(t.leg_press_45.w, t.leg_press_45.r),
         benchPress1RM:  epley1RM(t.banco_plano.w,  t.banco_plano.r),
@@ -1873,8 +1905,7 @@ $('#ob-next').addEventListener('click', async () => {
     showApp();
     return;
   }
-  obStep++;
-  if(obStep > 3) obStep = 3;
+  obStep = Math.min(flow.length - 1, obStep + 1);
   renderOnbStep();
 });
 $('#ob-back').addEventListener('click', () => {
@@ -3151,7 +3182,7 @@ $('#sync-now').addEventListener('click', async () => {
   }
 });
 $('#edit-profile').addEventListener('click', () => {
-  obStep = 1; showOnboarding();
+  obStep = 0; showOnboarding();
 });
 const editProfileBtnLabel = document.querySelector('#edit-profile');
 if(editProfileBtnLabel) editProfileBtnLabel.textContent = 'Editar perfil';
