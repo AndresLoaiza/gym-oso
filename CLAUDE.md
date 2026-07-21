@@ -220,7 +220,7 @@ Harness: stub DOM/localStorage/navigator + `new Function(code + 'return {binding
 
 ## Sync Supabase
 
-Backup automático + sync multi-dispositivo en **Supabase** (Postgres + Realtime). Reusa el **proyecto compartido con la app de viajes** (`gbfxpzsblnrasfvxnquk`, restricción free tier = máx. 2 proyectos). **Sin login** (decisión user 2026-06-23, único usuario): UID fijo hardcodeado + RLS `anon_all` en las tablas `gym_*`. SQL en `docs/supabase-setup.sql`.
+Backup automático + sync multi-dispositivo en **Supabase** (Postgres + Realtime). Reusa el **proyecto compartido con la app de viajes** (`gbfxpzsblnrasfvxnquk`, restricción free tier = máx. 2 proyectos). **Sin login** (decisión user 2026-06-23): UID **dinámico por perfil** (ver § Multi-perfil; Andrés conserva el UID legacy `ea8ea549…`) + RLS `anon_all` en las tablas `gym_*`. SQL en `docs/supabase-setup.sql`.
 
 - **Cliente**: `@supabase/supabase-js` **vendorizado** en `vendor/supabase.js` (offline-first, precacheado en `sw.js`). `createClient(SUPABASE_URL, SUPABASE_ANON_KEY)` + `const _gymUid` (UID fijo) en `index.html`.
 - **6 tablas `gym_*`** (prefijo evita colisión con el viaje), keyed por `user_id` (constante), RLS abierta a anon:
@@ -234,6 +234,17 @@ Backup automático + sync multi-dispositivo en **Supabase** (Postgres + Realtime
   - ⚠ El re-render lee el tab activo vía `document.querySelector('.nav-btn.active')`. **Bug histórico (arreglado):** usaba `.tab.active` (clase inexistente) → `active` caía al fallback `'home'` → cada eco realtime durante una sesión en "Hoy" saltaba a Inicio.
   - **Anti-pérdida**: un eco de `gym_active_session` NO se aplica si hay progreso local en curso (`sessionHasProgress(DB.sessionSets)`) — un eco stale del propio push (~1s de latencia) podía pisar `sessionSets` más nuevo. Telemetría `session_preserved {reason:'realtime_echo_blocked'}`.
 - ⚠ **Seguridad (riesgo asumido, decisión user)**: publishable key en repo público + RLS abierta ⇒ **cualquiera con la key puede leer/escribir los datos gym** (peso, edad, sesiones, telemetría). Mismo modelo "privacidad por oscuridad" que la app de viajes. Datos de gimnasio = sensibilidad baja. Reversible: reactivar policies `auth.uid()` + login (el código está en el historial git, commit `37961c4`).
+
+## Multi-perfil (Fase A)
+
+**1 perfil por dispositivo, elección explícita.** Permite una segunda persona (ej. Melisa) en otro device con datos aislados, sin login. Spec: `docs/superpowers/specs/2026-07-20-multi-perfil-design.md`. Plan: `docs/superpowers/plans/2026-07-20-multi-perfil-fase-a.md`.
+
+- **`PROFILES`** baked (`{id, name, uid}`): Andrés (uid legacy) + Melisa (uid nuevo). Agregar persona = añadir al array. `_gymUid` pasa de `const` a `let`, resuelto en boot → cada perfil sincroniza a **sus** filas `gym_*` (partición por `user_id`, mismo proyecto). `PROFILE_KEY = 'gymProfileId'` en localStorage recuerda la elección.
+- **Resolución de identidad** (`resolveProfileId(storedId, hasLocalProfile)`, pura, testeada): elección guardada válida → directo; sin elección + **datos locales** → `'andres'` (migración legacy sin fricción, tu iPhone no ve selector); fresh sin datos → **selector** `showProfilePicker()` "¿Quién eres?". `startApp()` (IIFE al final del script) orquesta esto antes de `bootWithSession()`. `uidOf(id)`/`profileName(id)` resuelven uid/nombre (fallback Andrés).
+- **Nombre parametrizado**: `profileName()` alimenta la guía Home (`#pfps-guide-name` en `renderHome`), la bienvenida de onboarding y (como "tú") la regla de cap en `COACH_RULES`. Marca "El Oso Gym" + mascota se mantienen.
+- **Config → "Cambiar persona"**: `await pushGymState()` (flush verificado, devuelve boolean) → **solo si OK** borra `gymProfileId` + `elosoGymV2` local → `location.reload()` → selector. Offline → no borra, avisa. La nube de cada UID queda intacta; re-elegir re-hidrata. Único switch (sin add/delete de perfiles — YAGNI).
+- **Gap conocido**: `pushGymState` no sube `gym_sessions` (van por `pushSession` al finalizar). Sesión con push fallido offline vive solo local → se perdería en el wipe; mitigado exigiendo online. Cierre completo = feature de reconciliación (pendiente).
+- **Fase B (pendiente, spec aparte)**: objetivos múltiples, PFPS opcional, ejercicios por objetivo. Fase A solo **reserva** `DB.profile.objective` (default `trekking_n4_pfps`, aún sin ramificar). Melisa tiene otro objetivo → su motor real es Fase B.
 
 ## Telemetría UX
 
