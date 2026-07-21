@@ -83,12 +83,13 @@ const code = m[1];
 let exposed;
 try {
   const exposeReturn = `return {
-    DEFAULT_DB, OBJECTIVE, CATALOGO, HOWTO, TEMPO, EX_TYPE,
+    DEFAULT_DB, CATALOGO, HOWTO, TEMPO, EX_TYPE,
     epley1RM, workWeight, parseNum, phaseOfWeek, windowOf, isUnilateral,
     analyzeWeightPattern, decideBump, applyProgression, tagPlanWithWindows,
     PROG_CAPS, DB, DAYC_ORDER, migrateDayCV3, rdlExercise, generateLocalPlan,
     parseHoldSec, isHoldEx, muscleTokens, suggestSwaps, escHtml, sessionHasProgress, planIsValid,
     PROFILES, resolveProfileId, uidOf, profileName,
+    OBJECTIVES, activeObjective,
     pickSyncSettings, gymStateRows, hydrateGymDB, applyGymRealtime,
     COACH_RULES, exerciseHistory, progressionVelocity, adaptiveStep,
     kneeLoadCorrelation, carryoverWeights, phaseCompliance,
@@ -144,12 +145,12 @@ test('phaseOfWeek 6 → end', () => assertEq(phaseOfWeek(6), 'end'));
 test('phaseOfWeek 7 → taper', () => assertEq(phaseOfWeek(7), 'taper'));
 
 console.log('\n--- Objective windows ---');
-test('OBJECTIVE.id = trekking_n4_pfps', () => assertEq(OBJECTIVE.id, 'trekking_n4_pfps'));
-test('strength adapt window [10,15]', () => assertDeep(OBJECTIVE.windows.strength.adapt, [10,15]));
-test('strength str window [5,8]', () => assertDeep(OBJECTIVE.windows.strength.str, [5,8]));
-test('pfps adapt window [12,20]', () => assertDeep(OBJECTIVE.windows.pfps.adapt, [12,20]));
-test('endurance end window [15,25]', () => assertDeep(OBJECTIVE.windows.endurance.end, [15,25]));
-test('posterior str window [8,12]', () => assertDeep(OBJECTIVE.windows.posterior.str, [8,12]));
+test('OBJECTIVE.id = trekking_n4_pfps', () => assertEq(OBJECTIVES.trekking_n4_pfps.id, 'trekking_n4_pfps'));
+test('strength adapt window [10,15]', () => assertDeep(OBJECTIVES.trekking_n4_pfps.windows.strength.adapt, [10,15]));
+test('strength str window [5,8]', () => assertDeep(OBJECTIVES.trekking_n4_pfps.windows.strength.str, [5,8]));
+test('pfps adapt window [12,20]', () => assertDeep(OBJECTIVES.trekking_n4_pfps.windows.pfps.adapt, [12,20]));
+test('endurance end window [15,25]', () => assertDeep(OBJECTIVES.trekking_n4_pfps.windows.endurance.end, [15,25]));
+test('posterior str window [8,12]', () => assertDeep(OBJECTIVES.trekking_n4_pfps.windows.posterior.str, [8,12]));
 
 test('windowOf leg_press_45 adapt = strength [10,15]', () => {
   const w = windowOf('leg_press_45', 'adapt');
@@ -647,6 +648,37 @@ test('uidOf / profileName: conocido → valor; desconocido → fallback', () => 
   assertEq(uidOf('melisa'), '8554bae7-752c-4f37-ad4d-00dba477fe38');
   assertEq(profileName('andres'), 'Andrés');
   assertEq(profileName('xxx'), 'Andrés', 'fallback');
+});
+
+console.log('\n--- Fase B: motor por objetivo ---');
+test('OBJECTIVES: ambos objetivos, kneeSafe correcto', () => {
+  assertTrue(!!OBJECTIVES.trekking_n4_pfps, 'trekking presente');
+  assertTrue(!!OBJECTIVES.strength_fitness, 'strength presente');
+  assertEq(OBJECTIVES.trekking_n4_pfps.kneeSafe, false);
+  assertEq(OBJECTIVES.strength_fitness.kneeSafe, true);
+});
+test('OBJECTIVES.strength_fitness cubre los types que usan sus ejercicios', () => {
+  const w = OBJECTIVES.strength_fitness.windows;
+  ['strength','hypertrophy','endurance','posterior'].forEach(t =>
+    assertTrue(!!w[t] && !!w[t].str, 'ventana para '+t));
+});
+test('activeObjective: sin profile → trekking; strength → strength; basura → trekking', () => {
+  DB.profile = null;
+  assertEq(activeObjective().id, 'trekking_n4_pfps');
+  DB.profile = { objective: 'strength_fitness' };
+  assertEq(activeObjective().id, 'strength_fitness');
+  DB.profile = { objective: 'zzz' };
+  assertEq(activeObjective().id, 'trekking_n4_pfps');
+  DB.profile = null;
+});
+test('windowOf usa las ventanas del objetivo activo', () => {
+  DB.profile = { objective: 'trekking_n4_pfps' };
+  const wt = windowOf('leg_press_45', 'str');
+  assertEq(wt.repMin, 5); assertEq(wt.repMax, 8);
+  DB.profile = { objective: 'strength_fitness' };
+  const ws = windowOf('leg_press_45', 'str');
+  assertEq(ws.repMin, 4); assertEq(ws.repMax, 6);
+  DB.profile = null;
 });
 
 /* ============= FRENTE C: COACH ADAPTATIVO ============= */

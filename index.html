@@ -984,19 +984,36 @@ function parseNum(v){ return parseFloat(String(v).replace(',', '.')) || 0; }
    completas repMax → +peso + reset a repMin. Mientras < repMax → +1 rep.
    Evidencia: Helms RP double progression, Schoenfeld 2017 rep windows,
    Powers 2010 PFPS endurance bias, ACSM 2026 periodización 4 fases. */
-const OBJECTIVE = {
-  id: 'trekking_n4_pfps',
-  name: 'Trekking nivel 4',
-  description: 'Endurance multihora bajo carga + protección PFPS + cadenas posteriores',
-  pattern: 'straight_sets',  // Schoenfeld 2017: óptimo vs pyramid/drop para principiante + PFPS
-  windows: {
-    // [repMin, repMax] por (type × phase). Plan inicial entra en mid-range.
-    strength:  { adapt:[10,15], str:[5,8],  end:[12,18], taper:[8,12] },
-    endurance: { adapt:[12,20], str:[12,18],end:[15,25], taper:[12,18] },
-    pfps:      { adapt:[12,20], str:[12,18],end:[15,20], taper:[12,18] },
-    posterior: { adapt:[8,15],  str:[8,12], end:[12,18], taper:[10,15] },
-  }
+const OBJECTIVES = {
+  trekking_n4_pfps: {
+    id: 'trekking_n4_pfps',
+    name: 'Trekking nivel 4',
+    description: 'Endurance multihora bajo carga + protección PFPS + cadenas posteriores',
+    pattern: 'straight_sets',
+    kneeSafe: false,
+    windows: {
+      strength:  { adapt:[10,15], str:[5,8],  end:[12,18], taper:[8,12] },
+      endurance: { adapt:[12,20], str:[12,18],end:[15,25], taper:[12,18] },
+      pfps:      { adapt:[12,20], str:[12,18],end:[15,20], taper:[12,18] },
+      posterior: { adapt:[8,15],  str:[8,12], end:[12,18], taper:[10,15] },
+    },
+  },
+  strength_fitness: {
+    id: 'strength_fitness',
+    name: 'Fuerza + estado físico',
+    description: 'Fuerza general full-body + acondicionamiento, ROM completo, sin restricción de rodilla',
+    pattern: 'straight_sets',
+    kneeSafe: true,
+    windows: {
+      strength:   { adapt:[8,12],  str:[4,6],  end:[10,14], taper:[6,10] },
+      hypertrophy:{ adapt:[10,15], str:[8,12], end:[12,18], taper:[10,14] },
+      endurance:  { adapt:[12,18], str:[10,15],end:[15,20], taper:[12,15] },
+      posterior:  { adapt:[8,15],  str:[6,10], end:[12,15], taper:[8,12] },
+      pfps:       { adapt:[10,15], str:[8,12], end:[12,18], taper:[10,14] },
+    },
+  },
 };
+function activeObjective(){ return OBJECTIVES[DB.profile?.objective] || OBJECTIVES.trekking_n4_pfps; }
 
 const EX_TYPE = {
   leg_press_45:'strength', banco_plano:'strength', remo_isolateral:'strength',
@@ -1015,8 +1032,8 @@ function isUnilateral(exId){
 }
 function windowOf(exId, ph){
   const t = EX_TYPE[exId];
-  if(!t || !OBJECTIVE.windows[t]?.[ph]) return null;
-  const [repMin, repMax] = OBJECTIVE.windows[t][ph];
+  if(!t || !activeObjective().windows[t]?.[ph]) return null;
+  const [repMin, repMax] = activeObjective().windows[t][ph];
   return { type:t, phase:ph, repMin, repMax };
 }
 
@@ -2004,7 +2021,7 @@ function generateLocalPlan(opts){
     ];
     weeks.push(wk);
   }
-  DB.plan = { start: todayISO(), weeks, generatedBy: 'local', objective: OBJECTIVE.id };
+  DB.plan = { start: todayISO(), weeks, generatedBy: 'local', objective: (DB.profile?.objective || 'trekking_n4_pfps') };
   tagPlanWithWindows();
 
   // ===== C3: carryover del ciclo anterior + periodización reactiva =====
@@ -2094,7 +2111,7 @@ function renderHome(){
     t.innerHTML = `<div style="display:flex;gap:12px;align-items:flex-start;">
         <span style="flex:0 0 auto;width:64px;height:64px;">${bearSVG(bearForFocus(td.focus), 64)}</span>
         <div style="flex:1;min-width:0;">
-          <div class="small" style="color:var(--accent);font-family:'DM Mono',monospace;margin-bottom:4px;">🎯 ${OBJECTIVE.name} · Fase: ${phLabel}</div>
+          <div class="small" style="color:var(--accent);font-family:'DM Mono',monospace;margin-bottom:4px;">🎯 ${activeObjective().name} · Fase: ${phLabel}</div>
           <div class="muscle">Semana ${ns.weekIdx+1} · Día ${ns.dayIdx+1} · ${td.focus}</div>
           <div style="font-size:13px; margin-top:6px;">${td.exercises.length} ejercicios · ${td.notes || ''}</div>
         </div>
@@ -3219,7 +3236,7 @@ async function bootWithSession(){
   if(DB.plan?.weeks){
     const firstEx = DB.plan.weeks[0]?.[0]?.exercises?.find(e => !e.isCardio && !e.noWeight);
     if(firstEx && (firstEx.type === undefined || firstEx.repMin === undefined)){
-      tagPlanWithWindows(); DB.plan.objective = OBJECTIVE.id; saveDB();
+      tagPlanWithWindows(); DB.plan.objective = (DB.profile?.objective || 'trekking_n4_pfps'); saveDB();
     }
   }
   migrateDayCV3();
