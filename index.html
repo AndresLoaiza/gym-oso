@@ -406,7 +406,7 @@ function scheduleSupabaseSync(){
   } catch(e){ /* nunca romper saveDB */ }
 }
 async function pushGymState(){
-  if(!_gymUid) return;
+  if(!_gymUid) return false;
   try {
     const r = gymStateRows(DB, _gymUid);
     const stamp = new Date().toISOString();
@@ -417,7 +417,8 @@ async function pushGymState(){
       sb.from('gym_active_session').upsert({ ...r.active_session, updated_at: stamp }),
       sb.from('gym_telemetry').upsert({ ...r.telemetry, updated_at: stamp }),
     ]);
-  } catch(e){ /* offline / error de red: el estado vive en localStorage, se reintenta al próximo saveDB */ }
+    return true;
+  } catch(e){ /* offline / error de red: el estado vive en localStorage, se reintenta al próximo saveDB */ return false; }
 }
 async function pushSession(session){
   if(!_gymUid) return;
