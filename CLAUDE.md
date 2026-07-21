@@ -101,11 +101,13 @@ Harness: stub DOM/localStorage/navigator + `new Function(code + 'return {binding
 
 ## Pantallas
 
-### Onboarding (4 pasos)
+### Onboarding (flujo dinámico, `obFlow()`)
+El flujo se computa según el objetivo elegido: `['welcome','objective','perfil', ...(kneeSafe?[]:['knee']), 'baseline']`. `renderOnbStep` y el handler `ob-next` operan por **clave de flujo**, no por índice fijo.
 1. Bienvenida + qué hace la app
-2. Perfil (peso, estatura, edad)
-3. Condición PFPS (estado rodilla hoy)
-4. **Test baseline (3 compuestos):**
+2. **Objetivo** (nuevo): "Fuerza + estar en forma" (`strength_fitness`) / "Trekking + cuidado de rodilla" (`trekking_n4_pfps`). Define PFPS on/off — no hay pregunta de condición separada.
+3. Perfil (peso, estatura, edad)
+4. Condición PFPS (estado rodilla hoy) — **solo si el objetivo NO es kneeSafe** (se omite para `strength_fitness`)
+5. **Test baseline (3 compuestos):**
    - Prensa 45° Hammer (compound pierna)
    - Press de banca (compound empuje)
    - Pulldown (compound tracción vertical)
@@ -287,7 +289,11 @@ Buffer local en `DB.telemetry.events` (FIFO cap 2000, ~120KB). 100% local — nu
 
 ## Objetivo + ventanas de progresión
 
-**`OBJECTIVE`** (singleton, `index.html`): `trekking_n4_pfps`. Define `windows[type][phase] = [repMin, repMax]` para double progression. Extensible a múltiples objetivos en el futuro.
+**`OBJECTIVES`** (map keyed por id, `index.html`) + **`activeObjective()`** = `OBJECTIVES[DB.profile?.objective] || OBJECTIVES.trekking_n4_pfps` (fallback seguro). Cada objetivo: `{ id, name, description, pattern, kneeSafe:bool, windows }`. `windows[type][phase] = [repMin, repMax]` para double progression. `windowOf`/`tagPlanWithWindows` leen del objetivo activo. Dos objetivos hoy:
+- **`trekking_n4_pfps`** (Andrés): `kneeSafe:false`. Todo lo descrito abajo (PFPS, split A/B/C trekking, wall sit, foco VMO, ventanas endurance-heavy). Comportamiento sin cambios respecto a antes de Fase B.
+- **`strength_fitness`** (Melisa): `kneeSafe:true`. **3 días full-body** (`dayFB_A/B/C` en `generateLocalPlan`, rotación squat/hinge/empuje/tracción/accesorio + finisher cardio ligero POST-pesas), ROM completo, sin restricción de rodilla, sin wall sit. Ventanas de fuerza reales (compuestos str [4,6]). Evidencia: Schoenfeld 2016 (frecuencia 3×/músculo en novatos), Wilson 2012 (cardio concurrente dosis-baja no interfiere; post-pesas no merma fuerza), Schoenfeld 2020 (ROM completo). `generateLocalPlan` ramifica el builder por `DB.profile.objective`; los días trekking `dayA/B/C` quedan intactos.
+
+**PFPS opcional (`kneeSafe`)**: si `activeObjective().kneeSafe`, `adaptSessionForKnee` retorna la sesión sin tocar y `requestKneeCheckin` saltea el check-in pre-sesión (fija `_kneeStatus='bien'`). Las ramas de rodilla de `decideBump` nunca disparan (status siempre 'bien'). Añadir un objetivo nuevo = añadir una entrada a `OBJECTIVES`.
 
 **`EX_TYPE`** mapea cada `ex.id` a un tipo: `strength` (compuestos), `endurance` (sóleo, mancuernas), `pfps` (leg ext, abductor, crossover), `posterior` (hiper inversa, prone curl).
 
