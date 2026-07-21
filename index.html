@@ -184,6 +184,11 @@
       </div>
     </div>
     <div class="card">
+      <h3>Cambiar persona</h3>
+      <div class="small">Este dispositivo usa 1 perfil. Cambiar sube tus datos a la nube y luego los limpia de este dispositivo para entrar como otra persona. En la nube nada se pierde.</div>
+      <button class="btn" id="switch-profile" style="margin-top:8px;">Cambiar persona</button>
+    </div>
+    <div class="card">
       <h3>Reiniciar onboarding</h3>
       <button class="btn danger" id="reset-onb">Volver a hacer onboarding</button>
     </div>
@@ -3095,6 +3100,28 @@ $('#import-file').addEventListener('change', async (e) => {
   } catch(err){
     alert('Error: ' + err.message);
   }
+});
+
+$('#switch-profile').addEventListener('click', () => {
+  openModal(`
+    <h2>¿Cambiar de persona?</h2>
+    <div class="small" style="margin:8px 0 14px;">Voy a subir tus datos a la nube y limpiar este dispositivo para entrar como otra persona. Necesitas internet. En la nube nada se borra.</div>
+    <button class="btn primary" id="switch-go" style="margin-bottom:8px;">Subir y cambiar</button>
+    <button class="btn" id="switch-cancel">Cancelar</button>
+  `);
+  $('#switch-cancel').addEventListener('click', closeModal);
+  $('#switch-go').addEventListener('click', async () => {
+    const btn = $('#switch-go'); btn.disabled = true; btn.textContent = 'Subiendo…';
+    const ok = await pushGymState();
+    if(!ok){
+      btn.disabled = false; btn.textContent = 'Subir y cambiar';
+      if(!$('#switch-err')) $('#switch-go').insertAdjacentHTML('afterend', '<div class="small" style="color:var(--danger);margin-top:8px;" id="switch-err">Sin conexión: no puedo cambiar sin perder datos. Reintenta con internet.</div>');
+      return;
+    }
+    localStorage.removeItem(PROFILE_KEY);
+    localStorage.removeItem(STORE_KEY);
+    location.reload();
+  });
 });
 
 $('#reset-onb').addEventListener('click', () => {
