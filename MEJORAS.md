@@ -69,3 +69,7 @@ D:\ANDRES\Claude_Projects\Senderismo, mismo patrón PWA):
 Canal: ambas apps ya comparten proyecto Supabase — define tabla puente o lectura
 cruzada, sin acoplar los repos. Propón el contrato antes de tocar código.
 ```
+
+---
+
+> Backlog anterior: `Improvements.md` (jun 2026) se retiró el 2026-11-10 para dejar un solo backlog por repo. No se revisó ítem por ítem; para consultarlo: `git show 726b26f:Improvements.md`.
